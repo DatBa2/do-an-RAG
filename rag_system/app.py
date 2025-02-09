@@ -7,16 +7,16 @@ from models.query_engine import query_llama_index, generate_gemini_answer
 
 start_time = time.time()
 
-# Load tài liệu từ thư mục data/documents
-documents = load_text_files("models/data/documents")
-# Xây dựng chỉ mục LlamaIndex với tài liệu từ Elasticsearch
-build_llama_index(documents)
-# Index tài liệu vào Elasticsearch
-index_documents(documents)
-# Tìm kiếm tài liệu từ Elasticsearch trước
-index = load_llama_index()
-# Truy vấn LlamaIndex để tìm tài liệu liên quan
-retrieved_docs = query_llama_index(index, user_question)
+# # Load tài liệu từ thư mục data/documents
+# documents = load_text_files("models/data/documents")
+# # Xây dựng chỉ mục LlamaIndex với tài liệu từ Elasticsearch
+# build_llama_index(documents)
+# # Index tài liệu vào Elasticsearch
+# index_documents(documents)
+# # Tìm kiếm tài liệu từ Elasticsearch trước
+# index = load_llama_index()
+# # Truy vấn LlamaIndex để tìm tài liệu liên quan
+# retrieved_docs = query_llama_index(index, user_question)
 
 
 # Câu hỏi từ người dùng
