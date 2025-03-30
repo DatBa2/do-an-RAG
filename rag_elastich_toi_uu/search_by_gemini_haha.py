@@ -99,11 +99,16 @@ def search_and_respond(question):
     documents = []
     if INDEX_NAMES:
         try:
+            size_limit = 3
+            if action == "Tìm kiếm tất cả" or action == "Tìm kiếm cụ thể":
+                size_limit = 5  # 🔹 Nếu tìm trên tất cả, lấy thêm tài liệu
             search_result = es.search(index=",".join(INDEX_NAMES), body={
                 "query": search_query,
-                "size": 3,
-                "_source": ["content", "filename", "folder"]
-            })
+                "_source": ["content", "filename", "folder"],  # Chỉ lấy các field cần thiết
+                "from": 0,  # Bắt đầu từ kết quả đầu tiên
+                "size": size_limit,   # Giới hạn số lượng kết quả trả về
+                "track_total_hits": False  # Giúp tối ưu hiệu suất khi không cần tổng số kết quả
+            }, request_cache=True)  # Kích hoạt caching cho query
             documents = search_result["hits"].get("hits", [])
         except Exception as e:
             print(f"⚠️ Lỗi khi tìm kiếm: {e}")

@@ -23,24 +23,31 @@ def hash_content(content):
     """Tạo hash SHA256 cho nội dung file để kiểm tra thay đổi."""
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-for root, _, files in os.walk(BASE_FOLDER):
-    folder_name = os.path.basename(root)  # Lấy tên thư mục con
-    index_name = f"documents_{folder_name.lower()}"  # Tạo index theo tên thư mục
-    
-    # 🛠️ Tạo index nếu chưa có
+# 🛠️ Tạo index nếu chưa có
+def create_index_if_not_exists(index_name):
     if not es.indices.exists(index=index_name):
         es.indices.create(index=index_name, body={
-            "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+            "settings": {
+                "number_of_shards": 3,  # 🔹 Chia dữ liệu ra 3 phần để tăng tốc truy vấn
+                "number_of_replicas": 1  # 🔹 Mỗi shard có 1 bản sao để tăng độ tin cậy
+            },
             "mappings": {
                 "properties": {
                     "content": {"type": "text"},
                     "filename": {"type": "keyword"},
                     "folder": {"type": "keyword"},
-                    "content_hash": {"type": "keyword"}  # Lưu hash để kiểm tra thay đổi
+                    "content_hash": {"type": "keyword"}  # 🔍 Dùng để kiểm tra trùng lặp
                 }
             }
         })
-    
+
+for root, _, files in os.walk(BASE_FOLDER):
+    folder_name = os.path.basename(root)  # Lấy tên thư mục con
+    index_name = f"documents_{folder_name.lower()}"  # Tạo index theo tên thư mục
+    create_index_if_not_exists(index_name)  # Tạo index nếu chưa có
+
+    batch_documents = []  # Lưu batch dữ liệu để bulk update
+
     for file_name in tqdm(files, desc=f"📂 Đang xử lý ({folder_name})"):
         file_path = os.path.join(root, file_name)
         content = ""
@@ -50,7 +57,7 @@ for root, _, files in os.walk(BASE_FOLDER):
             if file_name.endswith(".txt"):
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
-            
+
             # Xử lý file .xlsx và .xls
             elif file_name.endswith(".xlsx"):
                 df = pd.read_excel(file_path, sheet_name=None, engine="openpyxl")
@@ -74,34 +81,27 @@ for root, _, files in os.walk(BASE_FOLDER):
         if not content:
             continue
 
-        # Tạo hash nội dung
-        new_hash = hash_content(content)
+        # 🔍 Tạo hash nội dung làm ID
+        content_hash = hash_content(content)
+        doc_id = hashlib.sha1(content.encode("utf-8")).hexdigest()
 
-        # 🔍 Kiểm tra nếu tài liệu đã tồn tại
-        query = {"query": {"term": {"filename": file_name}}, "size": 1}
-        existing_docs = es.search(index=index_name, body=query)
+        # ✅ Gom dữ liệu vào batch để bulk update
+        batch_documents.append({
+            "_op_type": "index",
+            "_index": index_name,
+            "_id": doc_id,  # Dùng hash làm ID để kiểm tra trùng lặp
+            "_source": {
+                "content": content,
+                "filename": file_name,
+                "folder": folder_name,
+                "content_hash": content_hash
+            }
+        })
 
-        if existing_docs["hits"]["total"]["value"] > 0:
-            doc_id = existing_docs["hits"]["hits"][0]["_id"]
-            old_hash = existing_docs["hits"]["hits"][0]["_source"].get("content_hash", "")
-
-            if old_hash == new_hash:
-                print(f"✅ Không có thay đổi: {file_name}, bỏ qua cập nhật.")
-                continue  # Bỏ qua nếu nội dung không thay đổi
-
-            # Cập nhật nội dung nếu có thay đổi
-            es.update(index=index_name, id=doc_id, body={"doc": {"content": content, "folder": folder_name, "content_hash": new_hash}})
-            print(f"🔄 Đã cập nhật: {file_name} trong {folder_name}")
-        else:
-            documents.append({
-                "_index": index_name,
-                "_source": {"content": content, "filename": file_name, "folder": folder_name, "content_hash": new_hash}
-            })
-
-# 🚀 Bulk index
-if documents:
-    helpers.bulk(es, documents)
-    print(f"✅ Đã index {len(documents)} tài liệu mới.")
+    # 🚀 Bulk index toàn bộ batch
+    if batch_documents:
+        helpers.bulk(es, batch_documents)
+        print(f"✅ Đã index {len(batch_documents)} tài liệu mới trong {folder_name}.")
 
 end_time = time.time()
 print(f"🚀 Hoàn tất nạp dữ liệu! ⏳ Tổng thời gian: {end_time - start_time:.2f} giây")
