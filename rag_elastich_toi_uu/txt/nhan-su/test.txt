@@ -1,9 +1,0 @@
-Danh sách nhân sự hiện tại:
-Nguyễn Bá Đạt
-Nguyễn Bá Quang
-Nguyễn Thanh Nam
-Phan Thành Long
-
-Danh sách nhân sự đã nghỉ việc:
-Nguyễn Bá Đạt1
-Nguyễn Bá Đạt3
