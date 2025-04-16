@@ -29,20 +29,20 @@ TOPIC_FOLDERS = {
 }
 
 def analyze_question(question):
-    """Dùng Gemini để phân tích câu hỏi và xác định hướng xử lý."""
     global history
     chat = model.start_chat(history=history)
     prompt = f"""
-    Dưới đây là danh sách chủ đề:
+    Dưới đây là danh sách các chủ đề có sẵn:
     {', '.join(TOPIC_FOLDERS.keys())}
 
     Câu hỏi: "{question}"
 
-    Hãy phân loại câu hỏi vào một trong các trường hợp sau:
-    1. Cuộc hội thoại thông thường.
-    2. Câu hỏi cần tìm kiếm dữ liệu cụ thể trong tài liệu.
-    3. Cần tìm kiếm theo một trong các chủ đề: {', '.join(TOPIC_FOLDERS.keys())}.
-    4. Cần tìm kiếm trên tất cả các thư mục nếu không xác định được chủ đề cụ thể.
+    Hãy phân loại câu hỏi vào một trong các loại sau:
+
+    1. **Cuộc hội thoại thông thường**: Câu hỏi không liên quan đến tài liệu hoặc chủ đề cụ thể. Ví dụ: "Chào bạn!"
+    2. **Câu hỏi yêu cầu tìm kiếm tài liệu**: Câu hỏi muốn tìm thông tin cụ thể trong tài liệu. Ví dụ: "Tìm tài liệu về kinh tế."
+    3. **Câu hỏi liên quan đến một trong các chủ đề**: Câu hỏi cần tìm kiếm theo một trong các chủ đề sau: {', '.join(TOPIC_FOLDERS.keys())}. Ví dụ: "Tìm tài liệu về khoa học."
+    4. **Câu hỏi cần tìm kiếm trên tất cả các thư mục**: Nếu câu hỏi không thể xác định chủ đề rõ ràng. Ví dụ: "Tìm tài liệu liên quan đến nhân sự."
 
     Trả lời chỉ bằng một trong các kết quả sau:
     - "Cuộc hội thoại"
@@ -54,7 +54,6 @@ def analyze_question(question):
     return response.text.strip()
 
 def search_and_respond(question):
-    """Tìm kiếm tài liệu trong Elasticsearch hoặc trả lời trực tiếp bằng Gemini."""
     global history
     INDEX_NAMES = []
     try:
@@ -63,6 +62,7 @@ def search_and_respond(question):
     except Exception as e:
         print(f"⚠️ Lỗi khi lấy danh sách index: {e}")
         INDEX_NAMES = []
+
     start_time = time.time()
     action = analyze_question(question)
 
@@ -76,23 +76,43 @@ def search_and_respond(question):
         print(f"⏳ Hoàn thành trong {end_time - start_time:.4f} giây")
         return response.text
 
-    # 🧠 Xác định kiểu tìm kiếm
+    selected_indices = INDEX_NAMES
+    search_query = {}
+
     if action == "Tìm kiếm cụ thể":
         print("🔍 Cần tìm kiếm dữ liệu cụ thể trong tài liệu.")
         search_query = {
             "bool": {
                 "must": [
-                    {"match": {"content": question}},
-                    {"match_phrase": {"content": question}}
+                    {
+                        "multi_match": {
+                            "query": question,
+                            "fields": ["content_clean^2", "content"],
+                            "type": "most_fields"
+                        }
+                    }
                 ]
             }
         }
     elif action in TOPIC_FOLDERS:
         folder = TOPIC_FOLDERS[action]
         print(f"📂 AI xác định câu hỏi thuộc thư mục: {folder}")
+        selected_indices = []
+        main_index = f"documents_{folder}"
+        backup_index = "documents_chua-xac-dinh"
+
+        if main_index in INDEX_NAMES:
+            selected_indices.append(main_index)
+        if backup_index in INDEX_NAMES:
+            selected_indices.append(backup_index)
+
+        if not selected_indices:
+            print(f"⚠️ Không tìm thấy index phù hợp.")
+            return "Không tìm thấy tài liệu phù hợp."
+
         search_query = {
             "bool": {
-                "must": [{"match": {"content": question}}],
+                "must": [{"match": {"content_clean": question}}],
                 "should": [
                     {"match": {"folder": folder}},
                     {"match": {"folder": "chua-xac-dinh"}},
@@ -103,28 +123,25 @@ def search_and_respond(question):
         print("🔍 AI không chắc chắn, tìm kiếm trên tất cả thư mục.")
         search_query = {
             "bool": {
-                "must": [{"match": {"content": question}}],
+                "must": [{"match": {"content_clean": question}}],
                 "should": [{"match_phrase": {"content": question}}]
             }
         }
 
-    # 🔎 Tìm kiếm trong tất cả index có sẵn
     documents = []
-    if INDEX_NAMES:
+    if selected_indices:
         try:
-            size_limit = 3
-            if action == "Tìm kiếm tất cả" or action == "Tìm kiếm cụ thể":
-                size_limit = 5  # 🔹 Nếu tìm trên tất cả, lấy thêm tài liệu
-            search_result = es.search(index=",".join(INDEX_NAMES), body={
+            size_limit = 5
+            search_result = es.search(index=",".join(selected_indices), body={
                 "query": search_query,
-                "_source": ["content", "filename", "folder"],  # Chỉ lấy các field cần thiết
-                "from": 0,  # Bắt đầu từ kết quả đầu tiên
-                "size": size_limit,   # Giới hạn số lượng kết quả trả về
-                "track_total_hits": False,  # Giúp tối ưu hiệu suất khi không cần tổng số kết quả
+                "_source": ["content", "filename", "folder", "file_path"],
+                "from": 0, 
+                "size": size_limit,
+                "track_total_hits": False,
                 "highlight": {
-                    "fields": {"content": {"fragment_size": 200, "number_of_fragments": 3}}
+                    "fields": {"content": {"fragment_size": 500, "number_of_fragments": 5}}
                 }
-            }, request_cache=True)  # Kích hoạt caching cho query
+            }, request_cache=True)
             documents = search_result["hits"].get("hits", [])
         except Exception as e:
             print(f"⚠️ Lỗi khi tìm kiếm: {e}")
@@ -132,30 +149,23 @@ def search_and_respond(question):
     if not documents:
         return "Không tìm thấy tài liệu phù hợp."
 
-    # 📄 Lấy nội dung và nguồn tài liệu
-    context = "\n\n".join([f"(📄 {doc['_source']['filename']} - {doc['_source']['folder']}) {doc['_source']['content']}" for doc in documents])
-    # 🖥️ Cập nhật lịch sử hội thoại với cả tài liệu tham khảo
+    context = " ".join([
+        f"(📄 {doc['_source']['filename']} - {doc['_source']['folder']})\n"
+        f"Đường dẫn: {doc['_source'].get('file_path', 'Không rõ')}\n"
+        f"{' '.join(doc.get('highlight', {}).get('content', []) or [doc['_source']['content'][:500]])}"
+        for doc in documents
+    ])
     prompt = f"""
     Dưới đây là tài liệu tham khảo:
-
     {context}
-
     Câu hỏi: {question}
-
     Trả lời một cách chính xác dựa trên tài liệu trên.
     """
-
     history.append({"role": "user", "parts": [f"[Tài liệu tham khảo]\n{context}\n\nCâu hỏi: {question}"]})
-
-    # 🖨️ In nội dung gửi lên chatbot trước khi gửi
-    # print("\n🚀 Nội dung gửi lên chatbot:")
-    # print(prompt)
-    # print("\n📡 Gửi yêu cầu đến chatbot...\n")
 
     chat = model.start_chat(history=history)
     response = chat.send_message(prompt)
 
-    # Lưu lại phản hồi
     history.append({"role": "model", "parts": [response.text]})
 
     end_time = time.time()

@@ -6,6 +6,8 @@ from elasticsearch import Elasticsearch, exceptions
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import HTMLResponse
+from datetime import datetime
+from show_all import get_documents_from_index  # Import hàm lấy dữ liệu
 import time
 import uvicorn
 
@@ -45,7 +47,7 @@ async def startup_event():
 @app.get("/search")
 async def search(q: str = Query(..., alias="q")):
     results = search_and_respond(q)
-    return {"query": q, "results": results.strip()}
+    return {"query": q, "results": results}
 
 @app.get("/show_index")
 async def show_index():
@@ -75,6 +77,7 @@ async def clear_index():
             print(f"✅ Đã xóa index: {index_name}")
 
         print("🚀 Xóa tất cả index thành công!")
+        return {"results": "🚀 Xóa tất cả index thành công!"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -84,6 +87,45 @@ async def get_chatbot():
         return HTMLResponse(content="File not found!", status_code=404)
     with open(path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), status_code=200)
+    
+@app.get("/show_all", response_class=HTMLResponse)
+async def show_all(index_name: str = "documents_chua-xac-dinh"):
+    documents = get_documents_from_index(index_name=index_name)
+
+    if 'error' in documents:
+        return HTMLResponse(content=documents['error'], status_code=500)
+
+    html = f"""
+    <html>
+    <head>
+        <title>Danh sách tài liệu - {index_name}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; }}
+            .doc-box {{ border: 1px solid #ccc; padding: 10px; margin-bottom: 15px; border-radius: 8px; }}
+            .doc-box h3 {{ margin: 0; color: #2a4d8f; }}
+            pre {{ white-space: pre-wrap; word-wrap: break-word; }}
+        </style>
+    </head>
+    <body>
+        <h1>📄 Danh sách tài liệu từ index: <code>{index_name}</code></h1>
+    """
+
+    for doc in documents:
+        last_modified_ts = int(doc['last_modified'])
+        formatted_time = datetime.fromtimestamp(last_modified_ts).strftime("%H:%M:%S %d/%m/%Y")
+        html += f"""
+        <div class="doc-box">
+            <h3>{doc['filename']}</h3>
+            <details>
+                <summary><strong>Nội dung:</strong> (Nhấn để xem)</summary>
+                <pre>{doc['content']}</pre>
+            </details>
+            <p><strong>Cập nhật lần cuối:</strong> {formatted_time}</p>
+        </div>
+        """
+
+    html += "</body></html>"
+    return HTMLResponse(content=html)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
