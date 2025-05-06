@@ -8,3 +8,6 @@ tqdm==4.67.1
 uvicorn==0.34.1
 google-generativeai==0.8.4
 ollama==0.4.7
+pdfplumber
+python-docx
+openpyxl

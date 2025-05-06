@@ -1,4 +1,5 @@
 import os
+import mysql.connector
 from fastapi import FastAPI, Query
 from index_docs_excel import index_documents
 from search_by_gemini import search_and_respond
@@ -126,6 +127,22 @@ async def show_all(index_name: str = "documents_chua-xac-dinh"):
 
     html += "</body></html>"
     return HTMLResponse(content=html)
+
+
+@app.get("/mysql")
+def test_mysql():
+    conn = mysql.connector.connect(
+        host=os.getenv("DB_HOST"),
+        port=int(os.getenv("DB_PORT")),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME"),
+    )
+    cursor = conn.cursor()
+    cursor.execute("SELECT NOW()")
+    result = cursor.fetchone()
+    conn.close()
+    return {"mysql_time": result[0]}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000)

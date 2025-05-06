@@ -44,7 +44,7 @@ def analyze_question(question):
     - Tên chủ đề chính xác (ví dụ: "Kinh tế")
     - "Tìm kiếm tất cả"
     """
-    response = ollama.chat(model="llama3.2:latest", messages=[{"role": "user", "content": prompt}])
+    response = ollama.chat(model="gemma3:latest", messages=[{"role": "user", "content": prompt}])
     return response["message"]["content"].strip()
 
 def search_and_respond(question):
@@ -62,7 +62,7 @@ def search_and_respond(question):
 
     if action == "Cuộc hội thoại":
         print("🗣️ Câu hỏi là cuộc hội thoại thông thường.")
-        response = ollama.chat(model="llama3.2:latest", messages=[{"role": "user", "content": question}])
+        response = ollama.chat(model="gemma3:latest", messages=[{"role": "user", "content": question}])
         history.append({"role": "user", "parts": [question]})
         history.append({"role": "model", "parts": [response["message"]["content"]]})
         end_time = time.time()
@@ -156,7 +156,7 @@ def search_and_respond(question):
     """
     history.append({"role": "user", "parts": [f"[Tài liệu tham khảo]\n{context}\n\nCâu hỏi: {question}"]})
 
-    response = ollama.chat(model="llama3.2:latest", messages=[{"role": "user", "content": prompt}])
+    response = ollama.chat(model="gemma3:latest", messages=[{"role": "user", "content": prompt}])
 
     history.append({"role": "model", "parts": [response["message"]["content"]]})
 

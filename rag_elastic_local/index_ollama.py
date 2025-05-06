@@ -5,7 +5,7 @@ import pandas as pd
 import re
 import pdfplumber
 from pptx import Presentation
-from docx import Document  # Thêm import để xử lý file Word
+from docx import Document
 from elasticsearch import Elasticsearch, helpers
 from dotenv import load_dotenv
 from tqdm import tqdm

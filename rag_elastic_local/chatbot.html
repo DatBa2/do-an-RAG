@@ -157,7 +157,7 @@
       chat.scrollTop = chat.scrollHeight;
 
       try {
-        const response = await fetch(`http://localhost:8000/search?q=${encodeURIComponent(message)}`);
+        const response = await fetch(`http://localhost:8900/search?q=${encodeURIComponent(message)}`);
         if (!response.ok) throw new Error("Lỗi kết nối");
 
         const data = await response.json();

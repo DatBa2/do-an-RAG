@@ -19,19 +19,56 @@ services:
       start_period: 30s
       timeout: 30s
 
+  mysql:
+    image: mysql:8
+    container_name: mysql8
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: mydb
+      MYSQL_USER: myuser
+      MYSQL_PASSWORD: mypass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysqldata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+
   backend:
     build: .
     container_name: gemini_backend
     depends_on:
       - elasticsearch
+      - mysql
     volumes:
       - ./txt:/app/txt
     environment:
       - ES_HOST=http://elasticsearch:9200
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=mydb
+      - DB_USER=myuser
+      - DB_PASSWORD=mypass
     ports:
       - "8000:8000"
     command: >
       uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
+  telegram_bot:
+    build: .
+    container_name: telegram_bot
+    depends_on:
+      - backend
+    volumes:
+      - ./txt:/app/txt
+    environment:
+      - PYTHONPATH=/app
+    command: python telegram_bot/main.py
+    restart: always
+
 volumes:
   esdata:
+  mysqldata:
