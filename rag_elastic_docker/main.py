@@ -83,14 +83,17 @@ async def clear_index():
         print("🚀 Xóa tất cả index thành công!")
         return {"results": "🚀 Xóa tất cả index thành công!"}
 
-
-@app.post("/chat_bot", response_class=HTMLResponse)
+@app.get("/chat_bot", response_class=HTMLResponse)
 async def get_chatbot():
     path = "chatbot.html"
     if not os.path.exists(path):
         return HTMLResponse(content="File not found!", status_code=404)
     with open(path, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read(), status_code=200)
+
+@app.post("/chat_bot", response_class=HTMLResponse)
+async def get_chatbot_post():
+    return await get_chatbot()
     
 @app.get("/show_all", response_class=HTMLResponse)
 async def show_all(index_name: str = "documents_chua-xac-dinh"):
@@ -130,8 +133,6 @@ async def show_all(index_name: str = "documents_chua-xac-dinh"):
 
     html += "</body></html>"
     return HTMLResponse(content=html)
-
-
 
 @app.post("/login", response_class=HTMLResponse)
 async def login(username: str = Form(...), password: str = Form(...)):
