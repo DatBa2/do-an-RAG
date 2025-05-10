@@ -16,3 +16,4 @@ python-jose[cryptography]
 passlib[bcrypt]
 python-telegram-bot
 requests
+python-multipart

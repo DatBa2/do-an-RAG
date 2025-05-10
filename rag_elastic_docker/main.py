@@ -1,5 +1,5 @@
 import os
-import mysql.connector
+from fastapi import Form
 from fastapi import FastAPI, Query
 from index_docs_excel import index_documents
 from search_by_gemini import search_and_respond
@@ -9,6 +9,9 @@ from fastapi.responses import FileResponse
 from fastapi.responses import HTMLResponse
 from datetime import datetime
 from show_all import get_documents_from_index  # Import hàm lấy dữ liệu
+from fastapi.responses import RedirectResponse
+from login import verify_login, register_chatbot
+from mysql_util import execute_sql_query 
 import time
 import uvicorn
 
@@ -81,7 +84,7 @@ async def clear_index():
         return {"results": "🚀 Xóa tất cả index thành công!"}
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.post("/chat_bot", response_class=HTMLResponse)
 async def get_chatbot():
     path = "chatbot.html"
     if not os.path.exists(path):
@@ -129,20 +132,62 @@ async def show_all(index_name: str = "documents_chua-xac-dinh"):
     return HTMLResponse(content=html)
 
 
+
+@app.post("/login", response_class=HTMLResponse)
+async def login(username: str = Form(...), password: str = Form(...)):
+    if verify_login(username, password):
+        # Nếu đăng nhập thành công, chuyển hướng về trang chatbot
+        return RedirectResponse(url="/chat_bot")
+    else:
+        # Nếu đăng nhập thất bại, trả về thông báo lỗi
+        return HTMLResponse(content="Đăng nhập thất bại. Vui lòng thử lại.", status_code=401)
+    
+@app.get("/register", response_class=HTMLResponse)
+async def register_home():
+    path = "register.html"
+    if not os.path.exists(path):
+        return HTMLResponse(content="Không tìm thấy file register.html!", status_code=404)
+    with open(path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), status_code=200)
+
+@app.post("/register")
+def register_form(username: str = Form(...), password: str = Form(...)):
+    result = register_chatbot(username, password)
+    if result["status"] == True:
+        return RedirectResponse(url="/")
+    elif result["status"] == False:
+        return HTMLResponse(content=result["message"], status_code=400)
+    else:
+        return HTMLResponse(content=result["message"], status_code=500)
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def go_home():
+    return RedirectResponse(url="/")
+
+@app.post("/", response_class=HTMLResponse)
+async def home_post():
+    path = "login.html"
+    if not os.path.exists(path):
+        return HTMLResponse(content="Không tìm thấy file login.html!", status_code=404)
+    with open(path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), status_code=200)
+
+@app.get("/", response_class=HTMLResponse)
+async def home():
+    path = "login.html"
+    if not os.path.exists(path):
+        return HTMLResponse(content="Không tìm thấy file login.html!", status_code=404)
+    with open(path, "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read(), status_code=200)
+    
+
+
 @app.get("/mysql")
 def test_mysql():
-    conn = mysql.connector.connect(
-        host=os.getenv("DB_HOST"),
-        port=int(os.getenv("DB_PORT")),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        database=os.getenv("DB_NAME"),
-    )
-    cursor = conn.cursor()
-    cursor.execute("SELECT NOW()")
-    result = cursor.fetchone()
-    conn.close()
-    return {"mysql_time": result[0]}
+    result = execute_sql_query("select * from users u where 1 = 1")  # Gọi hàm thực thi SQL
+    return result
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000)
