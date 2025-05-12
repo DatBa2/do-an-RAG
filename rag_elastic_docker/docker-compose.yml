@@ -66,6 +66,8 @@ services:
       - ./txt:/app/txt
     environment:
       - PYTHONPATH=/app
+      - JIRA_USERNAME=badat
+      - JIRA_PASSWORD=badat
     command: python telegram_bot/main.py
     restart: always
 
