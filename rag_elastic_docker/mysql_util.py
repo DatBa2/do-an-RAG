@@ -20,6 +20,8 @@ def execute_sql_query(query: str):
     
 
 def insert_data(query: str, params: tuple = None) -> bool:
+    conn = None
+    cursor = None
     try:
         conn = mysql.connector.connect(
             host=os.getenv("DB_HOST", "127.0.0.1"),
@@ -34,11 +36,15 @@ def insert_data(query: str, params: tuple = None) -> bool:
         else:
             cursor.execute(query)
         conn.commit()
-        conn.close()
         return True
     except mysql.connector.Error as err:
         print(f"[INSERT ERROR] {err}")
         return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
 
 
 def update_data(query: str, params: tuple = None) -> bool:
@@ -55,6 +61,7 @@ def update_data(query: str, params: tuple = None) -> bool:
             cursor.execute(query, params)
         else:
             cursor.execute(query)
+        print(query)
         conn.commit()
         conn.close()
         return True

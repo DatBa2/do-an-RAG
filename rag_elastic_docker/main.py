@@ -1,194 +1,116 @@
-import os
-from fastapi import Form
-from fastapi import FastAPI, Query
-from index_docs_excel import index_documents
-from search_by_gemini import search_and_respond
-from elasticsearch import Elasticsearch, exceptions
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.responses import HTMLResponse
-from datetime import datetime
-from show_all import get_documents_from_index  # Import hàm lấy dữ liệu
-from fastapi.responses import RedirectResponse
-from login import verify_login, register_chatbot
-from mysql_util import execute_sql_query 
-import time
-import uvicorn
+import requests
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import MessageHandler, filters
+from search_by_gemini import search_and_respond, chat_and_respond
 
-app = FastAPI()
+TELEGRAM_TOKEN = '7201416424:AAHLwyzpJoyzr5A7CdmLxmrv1ZYe4HjcnvY'
+ALLOWED_USER_IDS = [6554124253]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Tạo danh sách để lưu trữ message_id của các tin nhắn bot đã gửi
+sent_messages = []
 
-def wait_for_es(es_host, retries=10, delay=5):
-    """Chờ Elasticsearch sẵn sàng."""
-    es = Elasticsearch(es_host)
-    for _ in range(retries):
+# /start - Chào mừng người dùng
+async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.chat.send_action("typing")
+    welcome_text = (
+        "<b>Chào mừng bạn đến với Trợ lý AI của Nguyễn Bá Đạt!</b>\n\n"
+        "Tôi có thể hỗ trợ bạn trả lời câu hỏi, truy xuất dữ liệu nội bộ (nếu bạn có quyền), "
+        "và lưu lịch sử trò chuyện.\n\n"
+        "Gõ <b>/help</b> để xem danh sách lệnh hỗ trợ."
+    )
+    new_message = await update.message.reply_text(welcome_text, parse_mode='HTML')
+    # Lưu message_id của tin nhắn bot đã gửi
+    sent_messages.append(new_message.message_id)
+
+# /help - Hiển thị danh sách lệnh
+async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.chat.send_action("typing")
+    help_text = (
+        "<b>Danh sách lệnh hỗ trợ:</b>\n\n"
+        "<b>/start</b> - Bắt đầu trò chuyện với bot\n"
+        "<b>/help</b> - Hiển thị hướng dẫn sử dụng\n"
+        "<b>/noi_bo [câu hỏi]</b> - Tìm kiếm dữ liệu nội bộ\n"
+        "<b>/history</b> - Lấy lịch sử trò chuyện gần đây\n\n"
+        "Bạn cũng có thể gửi tin nhắn để trò chuyện trực tiếp."
+    )
+    new_message = await update.message.reply_text(help_text, parse_mode='HTML')
+    sent_messages.append(new_message.message_id)
+
+# /noi_bo - Xử lý tìm kiếm nội bộ
+async def handle_noi_bo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ALLOWED_USER_IDS:
+        await update.message.reply_text("Bạn không có quyền truy cập vào dữ liệu nội bộ.")
+        return
+
+    user_message = ' '.join(context.args)
+    if not user_message:
+        await update.message.reply_text("Vui lòng nhập câu hỏi sau lệnh /noi_bo.")
+        return
+
+    try:
+        await update.message.chat.send_action("typing")
+        reply_text = search_and_respond(user_message, 0, user_id)
+    except Exception as e:
+        reply_text = f"Lỗi khi truy vấn dữ liệu nội bộ: {e}"
+
+    await update.message.reply_text(reply_text[:4000])
+
+# /history - Hiển thị lịch sử (tạm thời)
+async def handle_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.chat.send_action("typing")
+    await update.message.reply_text("Chức năng xem lịch sử đang được phát triển.")
+
+# Xử lý tin nhắn thông thường
+async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_message = update.message.text
+    try:
+        await update.message.chat.send_action("typing")
+        reply_text = chat_and_respond(user_message, 0, update.effective_user.id)
+    except Exception as e:
+        reply_text = f"Lỗi khi gọi AI: {e}"
+
+    new_message = await update.message.reply_text(reply_text[:4000])
+    sent_messages.append(new_message.message_id)
+
+# Xóa tất cả tin nhắn đã gửi
+async def delete_previous_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    for message_id in sent_messages:
         try:
-            es.ping()
-            print("✅ Elasticsearch đã sẵn sàng.")
-            return True
-        except exceptions.ConnectionError:
-            print("⚠️ Elasticsearch chưa sẵn sàng. Đang thử lại...")
-            time.sleep(delay)
-    print("❌ Không thể kết nối đến Elasticsearch sau nhiều lần thử.")
-    return False
+            await update.message.chat.delete_message(message_id)
+        except Exception as e:
+            print(f"Không thể xóa tin nhắn với message_id {message_id}: {e}")
+    sent_messages.clear()
 
-@app.get("/index_documents")
-async def startup_event():
-    if wait_for_es(os.getenv("ES_HOST", "http://localhost:9200")):
-        return index_documents()
-    else:
-        print("❌ Không thể tiếp tục vì Elasticsearch không sẵn sàng.")
-        # Có thể dừng ứng dụng hoặc thực hiện hành động khác tùy ý
+# Xử lý lệnh /new_chat
+async def handle_new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Xóa tất cả các tin nhắn trước đó
+    await delete_previous_messages(update, context)
 
+    # Gửi lại thông báo chào mừng như khi bắt đầu trò chuyện mới
+    welcome_text = (
+        "<b>Chào mừng bạn đến với Trợ lý AI của Nguyễn Bá Đạt!</b>\n\n"
+        "Tôi có thể hỗ trợ bạn trả lời câu hỏi, truy xuất dữ liệu nội bộ (nếu bạn có quyền), "
+        "và lưu lịch sử trò chuyện.\n\n"
+        "Gõ <b>/help</b> để xem danh sách lệnh hỗ trợ."
+    )
+    new_message = await update.message.reply_text(welcome_text, parse_mode='HTML')
+    sent_messages.append(new_message.message_id)
 
-@app.get("/search")
-async def search(q: str = Query(..., alias="q")):
-    results = search_and_respond(q)
-    return {"query": q, "results": results}
+def main():
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-@app.get("/show_index")
-async def show_index():
-    es = Elasticsearch(os.getenv("ES_HOST", "http://localhost:9200"))
-    # Lấy danh sách tất cả index
-    indices = es.cat.indices(format="json")
+    app.add_handler(CommandHandler("start", handle_start))
+    app.add_handler(CommandHandler("help", handle_help))
+    app.add_handler(CommandHandler("noi_bo", handle_noi_bo))
+    app.add_handler(CommandHandler("history", handle_history))
+    app.add_handler(CommandHandler("new_chat", handle_new_chat))  # Đăng ký lệnh mới
 
-    # In danh sách index
-    if indices:
-        print("📌 Danh sách tất cả index trong Elasticsearch:")
-        for index in indices:
-            print(f"- {index['index']} (Trạng thái: {index['status']}, Số tài liệu: {index['docs.count']})")
-    else:
-        print("⚠️ Không có index nào trong Elasticsearch.")
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_chat))
 
-@app.get("/clear_index")
-async def clear_index():
-    es = Elasticsearch(os.getenv("ES_HOST", "http://localhost:9200"))
-    indices = es.cat.indices(format="json")
-    if not indices:
-        print("⚠️ Không có index nào để xóa.")
-    else:
-        print("🗑 Đang xóa tất cả index trong Elasticsearch...")
-        for index in indices:
-            index_name = index["index"]
-            es.options(ignore_status=[400, 404]).indices.delete(index=index_name)
-            print(f"✅ Đã xóa index: {index_name}")
+    print("Bot đang chạy...")
+    app.run_polling()
 
-        print("🚀 Xóa tất cả index thành công!")
-        return {"results": "🚀 Xóa tất cả index thành công!"}
-
-@app.get("/chat_bot", response_class=HTMLResponse)
-async def get_chatbot():
-    path = "chatbot.html"
-    if not os.path.exists(path):
-        return HTMLResponse(content="File not found!", status_code=404)
-    with open(path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), status_code=200)
-
-@app.post("/chat_bot", response_class=HTMLResponse)
-async def get_chatbot_post():
-    return await get_chatbot()
-    
-@app.get("/show_all", response_class=HTMLResponse)
-async def show_all(index_name: str = "documents_chua-xac-dinh"):
-    documents = get_documents_from_index(index_name=index_name)
-
-    if 'error' in documents:
-        return HTMLResponse(content=documents['error'], status_code=500)
-
-    html = f"""
-    <html>
-    <head>
-        <title>Danh sách tài liệu - {index_name}</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; }}
-            .doc-box {{ border: 1px solid #ccc; padding: 10px; margin-bottom: 15px; border-radius: 8px; }}
-            .doc-box h3 {{ margin: 0; color: #2a4d8f; }}
-            pre {{ white-space: pre-wrap; word-wrap: break-word; }}
-        </style>
-    </head>
-    <body>
-        <h1>📄 Danh sách tài liệu từ index: <code>{index_name}</code></h1>
-    """
-
-    for doc in documents:
-        last_modified_ts = int(doc['last_modified'])
-        formatted_time = datetime.fromtimestamp(last_modified_ts).strftime("%H:%M:%S %d/%m/%Y")
-        html += f"""
-        <div class="doc-box">
-            <h3>{doc['filename']}</h3>
-            <details>
-                <summary><strong>Nội dung:</strong> (Nhấn để xem)</summary>
-                <pre>{doc['content']}</pre>
-            </details>
-            <p><strong>Cập nhật lần cuối:</strong> {formatted_time}</p>
-        </div>
-        """
-
-    html += "</body></html>"
-    return HTMLResponse(content=html)
-
-@app.post("/login", response_class=HTMLResponse)
-async def login(username: str = Form(...), password: str = Form(...)):
-    if verify_login(username, password):
-        # Nếu đăng nhập thành công, chuyển hướng về trang chatbot
-        return RedirectResponse(url="/chat_bot")
-    else:
-        # Nếu đăng nhập thất bại, trả về thông báo lỗi
-        return HTMLResponse(content="Đăng nhập thất bại. Vui lòng thử lại.", status_code=401)
-    
-@app.get("/register", response_class=HTMLResponse)
-async def register_home():
-    path = "register.html"
-    if not os.path.exists(path):
-        return HTMLResponse(content="Không tìm thấy file register.html!", status_code=404)
-    with open(path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), status_code=200)
-
-@app.post("/register")
-def register_form(username: str = Form(...), password: str = Form(...)):
-    result = register_chatbot(username, password)
-    if result["status"] == True:
-        return RedirectResponse(url="/")
-    elif result["status"] == False:
-        return HTMLResponse(content=result["message"], status_code=400)
-    else:
-        return HTMLResponse(content=result["message"], status_code=500)
-
-
-@app.get("/login", response_class=HTMLResponse)
-async def go_home():
-    return RedirectResponse(url="/")
-
-@app.post("/", response_class=HTMLResponse)
-async def home_post():
-    path = "login.html"
-    if not os.path.exists(path):
-        return HTMLResponse(content="Không tìm thấy file login.html!", status_code=404)
-    with open(path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), status_code=200)
-
-@app.get("/", response_class=HTMLResponse)
-async def home():
-    path = "login.html"
-    if not os.path.exists(path):
-        return HTMLResponse(content="Không tìm thấy file login.html!", status_code=404)
-    with open(path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), status_code=200)
-    
-
-
-@app.get("/mysql")
-def test_mysql():
-    result = execute_sql_query("select * from users u where 1 = 1")  # Gọi hàm thực thi SQL
-    return result
-
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+if __name__ == '__main__':
+    main()

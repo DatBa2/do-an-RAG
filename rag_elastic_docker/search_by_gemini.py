@@ -2,6 +2,7 @@ import os
 import time
 import google.generativeai as genai
 from elasticsearch import Elasticsearch
+from mysql_util import execute_sql_query, insert_data
 from dotenv import load_dotenv
 
 # Load biến môi trường
@@ -29,7 +30,6 @@ TOPIC_FOLDERS = {
 }
 
 def analyze_question(question):
-    global history
     chat = model.start_chat(history=history)
     prompt = f"""
     Dưới đây là danh sách các chủ đề có sẵn:
@@ -38,22 +38,21 @@ def analyze_question(question):
     Câu hỏi: "{question}"
 
     Hãy phân loại câu hỏi vào một trong các loại sau:
-
-    1. **Cuộc hội thoại thông thường**: Câu hỏi không liên quan đến tài liệu hoặc chủ đề cụ thể. Ví dụ: "Chào bạn!"
-    2. **Câu hỏi yêu cầu tìm kiếm tài liệu**: Câu hỏi muốn tìm thông tin cụ thể trong tài liệu. Ví dụ: "Tìm tài liệu về kinh tế."
-    3. **Câu hỏi liên quan đến một trong các chủ đề**: Câu hỏi cần tìm kiếm theo một trong các chủ đề sau: {', '.join(TOPIC_FOLDERS.keys())}. Ví dụ: "Tìm tài liệu về khoa học."
-    4. **Câu hỏi cần tìm kiếm trên tất cả các thư mục**: Nếu câu hỏi không thể xác định chủ đề rõ ràng. Ví dụ: "Tìm tài liệu liên quan đến nhân sự."
+    1. Cuộc hội thoại thông thường
+    2. Câu hỏi yêu cầu tìm kiếm tài liệu
+    3. Câu hỏi liên quan đến một trong các chủ đề
+    4. Câu hỏi cần tìm kiếm trên tất cả các thư mục
 
     Trả lời chỉ bằng một trong các kết quả sau:
     - "Cuộc hội thoại"
     - "Tìm kiếm cụ thể"
-    - Tên chủ đề chính xác (ví dụ: "Kinh tế")
+    - Tên chủ đề chính xác
     - "Tìm kiếm tất cả"
     """
     response = chat.send_message(prompt)
     return response.text.strip()
 
-def search_and_respond(question):
+def search_and_respond(question, user_id = 0, tele_id = 0):
     global history
     INDEX_NAMES = []
     try:
@@ -74,6 +73,7 @@ def search_and_respond(question):
         history.append({"role": "model", "parts": [response.text]})
         end_time = time.time()
         print(f"⏳ Hoàn thành trong {end_time - start_time:.4f} giây")
+        save_chat_history(user_id, tele_id, question, response.text)
         return response.text
 
     selected_indices = INDEX_NAMES
@@ -155,11 +155,12 @@ def search_and_respond(question):
         f"{' '.join(doc.get('highlight', {}).get('content', []) or [doc['_source']['content'][:500]])}"
         for doc in documents
     ])
+    print(context)
     prompt = f"""
     Dưới đây là tài liệu tham khảo:
     {context}
     Câu hỏi: {question}
-    Trả lời một cách chính xác dựa trên tài liệu trên.
+    Trả lời dựa vào tài liệu tham khảo trên. Nếu không có dữ liệu phù hợp hay bỏ qua không cần trình bày hãy trả lời bằng vốn hiểu biết của bạn
     """
     history.append({"role": "user", "parts": [f"[Tài liệu tham khảo]\n{context}\n\nCâu hỏi: {question}"]})
 
@@ -170,6 +171,26 @@ def search_and_respond(question):
 
     end_time = time.time()
     print(f"⏳ Hoàn thành trong {end_time - start_time:.4f} giây")
+    save_chat_history(user_id, tele_id, question, response.text)
+    return response.text
+
+
+def save_chat_history(user_id: int, tele_id: int, message: str, response: str):
+    query = "INSERT INTO chat_history (user_id, tele_id, message, response) VALUES (%s, %s, %s, %s)"
+    params = (user_id, tele_id, message, response)
+    insert_data(query, params)
+
+history_chat = []
+def chat_and_respond(question, user_id = 0, tele_id = 0):
+    global history_chat
+    start_time = time.time()
+    chat = model.start_chat(history=history_chat)
+    response = chat.send_message(question)
+    history_chat.append({"role": "user", "parts": [question]})
+    history_chat.append({"role": "model", "parts": [response.text]})
+    end_time = time.time()
+    print(f"⏳ Hoàn thành trong {end_time - start_time:.4f} giây")
+    save_chat_history(user_id, tele_id, question, response.text)
     return response.text
 
 if __name__ == "__main__":
