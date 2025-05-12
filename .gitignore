@@ -8,3 +8,4 @@ venv/
 rag_system/venv/
 rag_elastic_docker/venv/
 .DS_Store
+.env
