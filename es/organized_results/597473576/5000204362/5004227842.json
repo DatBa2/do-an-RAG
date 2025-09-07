@@ -1,0 +1,507 @@
+{
+    "data": {
+        "user": {
+            "ten_lop": "6A4",
+            "full_name": "Trần Văn Bảo Long",
+            "ma_hoc_sinh": "2405055150",
+            "ngay_sinh_text": "23\/01\/2013",
+            "sll_mobile": "0367064789",
+            "lop_hoc_id": "5000204362",
+            "nam_hoc": "2024",
+            "truong_id": "597473576",
+            "ten_truong": "TRƯỜNG THCS THÁI BÌNH",
+            "khoi": "6",
+            "goi_cuoc_sll": "3157076885",
+            "tinh_id": "60",
+            "huyen_id": "78",
+            "cap": "2",
+            "ten_tinh": "Trà Vinh",
+            "ten_huyen": "Huyện Càng Long",
+            "nam_hoc_text": "2024-2025",
+            "id": "5004227842",
+            "hoc_sinh_id": "5004227842",
+            "lock_sll_net": true,
+            "is_user_connect": true,
+            "is_pass_sll": false,
+            "ser": "0.1"
+        },
+        "hocKyID": 2,
+        "namHoc": "2024",
+        "thongTinHS": "Kết quả học tập: Trần Văn Bảo Long - Lớp: 6A4",
+        "maHocSinh": "2405055150",
+        "khoi": "6",
+        "aChuyenCan": {
+            "phep": 0,
+            "khong_phep": 0,
+            "bo_tiet": 0
+        },
+        "aKhenThuong": [],
+        "danhHieu": "",
+        "soDiem": {
+            "hoc_ky": 2,
+            "mon_hoc_tinh_diem": {
+                "1": {
+                    "ten_mon_hoc": "Toán học",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "7"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "5"
+                        },
+                        {
+                            "stt": "3",
+                            "diem": "10"
+                        },
+                        {
+                            "stt": "4",
+                            "diem": "6"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "3.8"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "6"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 6,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 0,
+                    "nhan_xet": "Kết quả học tập đạt, cần cố gắng hơn."
+                },
+                "53": {
+                    "ten_mon_hoc": "Lịch sử và Địa lí",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "8"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "9"
+                        },
+                        {
+                            "stt": "3",
+                            "diem": "9"
+                        },
+                        {
+                            "stt": "4",
+                            "diem": "9"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "9"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "8.3"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 8.7,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 0,
+                    "nhan_xet": ""
+                },
+                "81": {
+                    "ten_mon_hoc": "Khoa học tự nhiên",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "5"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "9"
+                        },
+                        {
+                            "stt": "3",
+                            "diem": "9"
+                        },
+                        {
+                            "stt": "4",
+                            "diem": "9"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "5.5"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "4.5"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 6.3,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 0,
+                    "nhan_xet": ""
+                },
+                "11": {
+                    "ten_mon_hoc": "Tin học",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "10"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "7"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "4.5"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "6.5"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 6.5,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 0,
+                    "nhan_xet": ""
+                },
+                "2": {
+                    "ten_mon_hoc": "Ngữ văn",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "9"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "9"
+                        },
+                        {
+                            "stt": "3",
+                            "diem": "6"
+                        },
+                        {
+                            "stt": "4",
+                            "diem": "8"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "7"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "6"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 7.1,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 0,
+                    "nhan_xet": ""
+                },
+                "8": {
+                    "ten_mon_hoc": "Ngoại ngữ",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "9"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "6"
+                        },
+                        {
+                            "stt": "3",
+                            "diem": "9"
+                        },
+                        {
+                            "stt": "4",
+                            "diem": "8"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "5"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "6.5"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 6.8,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 0,
+                    "nhan_xet": ""
+                },
+                "9": {
+                    "ten_mon_hoc": "GDCD",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "8"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "8"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "7"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "6.5"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 7.1,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 0,
+                    "nhan_xet": "Cần cố gắng hơn"
+                },
+                "10": {
+                    "ten_mon_hoc": "Công nghệ",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "10"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "5"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "8.3"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "7"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 7.5,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 0,
+                    "nhan_xet": ""
+                }
+            },
+            "mon_hoc_nhan_xet": {
+                "97": {
+                    "ten_mon_hoc": "Giáo dục thể chất",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 1,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 1,
+                    "nhan_xet": ""
+                },
+                "64": {
+                    "ten_mon_hoc": "Nghệ thuật",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 1,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 1,
+                    "nhan_xet": ""
+                },
+                "104": {
+                    "ten_mon_hoc": "Nội dung giáo dục của địa phương",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 1,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 1,
+                    "nhan_xet": ""
+                },
+                "102": {
+                    "ten_mon_hoc": "Hoạt động trải nghiệm, hướng nghiệp",
+                    "TX": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        },
+                        {
+                            "stt": "2",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "GK": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "CK": [
+                        {
+                            "stt": "1",
+                            "diem": "Đ"
+                        }
+                    ],
+                    "TK": [
+                        {
+                            "stt": "1",
+                            "diem": 1,
+                            "diem_muc_tieu": null
+                        }
+                    ],
+                    "loai_nhap_diem": 1,
+                    "nhan_xet": ""
+                }
+            },
+            "isTT22": true,
+            "tong_ket": {
+                "diem_tk": 7,
+                "hoc_luc": "Khá",
+                "hanh_kiem": "Tốt",
+                "danh_hieu": "Chưa xét",
+                "hidden": 1,
+                "len_lop": "Được lên lớp"
+            },
+            "nhan_xet_gvcn": "Hoàn thành nhiệm vụ học tập",
+            "lop_type": "0"
+        }
+    }
+}

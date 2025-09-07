@@ -1,0 +1,14 @@
+{
+    "toan": ["toan", "toan hoc"],
+    "ngu van": ["ngu van", "van"],
+    "ngoai ngu": ["ngoai ngu", "tieng anh", "english", "anh van"],
+    "lich su va dia li": ["lich su va dia li", "lich su", "dia li", "lsdl"],
+    "khoa hoc tu nhien": ["khoa hoc tu nhien", "khtn", "khoa hoc"],
+    "tin hoc": ["tin hoc", "tin"],
+    "gdcd": ["gdcd"],
+    "cong nghe": ["cong nghe", "cn"],
+    "nghe thuat": ["nghe thuat", "am nhac", "mi thuat"],
+    "giao duc the chat": ["giao duc the chat", "the duc", "gdtc"],
+    "noi dung giao duc cua dia phuong": ["noi dung giao duc cua dia phuong", "ndgd dia phuong", "dia phuong"],
+    "hoat dong trai nghiem, huong nghiep": ["hdtn", "hoat dong trai nghiem", "huong nghiep"]
+}

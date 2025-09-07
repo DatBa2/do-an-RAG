@@ -1,0 +1,8 @@
+elasticsearch
+python-dotenv
+tqdm
+google-generativeai
+ollama
+openpyxl
+python-telegram-bot
+requests
