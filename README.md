@@ -10,3 +10,5 @@ Chay lệnh build docker
 # Macos
 3. `python3 es_index.py --full-refresh`
 4. `python3 es_tele_bot.py`
+
+5. Vào telegram tìm bot @badat_rag_bot
