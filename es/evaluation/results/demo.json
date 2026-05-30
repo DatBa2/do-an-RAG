@@ -1,0 +1,141 @@
+{
+  "cases": [
+    {
+      "id": "A04",
+      "scenario": "Tra cứu điểm môn (function-calling)",
+      "role": "parent",
+      "covers": "Function-calling cho dữ liệu có cấu trúc (UC01)",
+      "question": "Điểm Toán của Lê Nguyễn Minh Trí lớp 7A10 học kỳ 2",
+      "answer": "Chào bạn, dưới đây là kết quả học tập môn Toán của em Lê Nguyễn Minh Trí, học sinh lớp 7A10 trong học kỳ 2 năm học 2024-2025:\n\n*   **Điểm thường xuyên (TX):** 8.75\n*   **Điểm giữa kỳ (GK):** 7.3\n*   **Điểm cuối kỳ (CK):** 9.0\n*   **Điểm tổng kết (TK):** 8.5\n\nNếu cần hỗ trợ thêm bất kỳ thông tin nào khác về kết quả học tập của em, bạn vui lòng cho tôi biết nhé!",
+      "tools_called": [
+        "get_subject_score"
+      ],
+      "citations": [],
+      "elapsed_ms": 6067,
+      "success": true
+    },
+    {
+      "id": "B11",
+      "scenario": "Tra cứu tài liệu (hybrid BM25+KNN+RRF)",
+      "role": "parent",
+      "covers": "Hybrid retrieval phi cấu trúc + citation (UC08)",
+      "question": "Học phí lớp 7 năm 2024-2025 là bao nhiêu một tháng?",
+      "answer": "Chào quý phụ huynh,\n\nVề mức học phí dành cho học sinh cấp THCS (trong đó có lớp 7) trong năm học 2024-2025, thông tin cụ thể như sau:\n\n*   **Mức học phí:** 70.000 đồng/tháng/học sinh (áp dụng từ tháng 09/2024).\n*   **Hình thức đóng:** Đóng theo học kỳ (Học kỳ 1 đóng vào tháng 10/2024, học kỳ 2 đóng vào tháng 03/2025).\n\nNgoài ra, nhà trường cũng có các chính sách miễn, giảm học phí cho các trường hợp cụ thể:\n*   **Miễn 100% học phí:** Dành cho con liệt sĩ, con thương binh, học sinh khuyết tật và học sinh thuộc hộ nghèo.\n*   **Giảm 50% học phí:** Dành cho học sinh thuộc hộ cận nghèo.\n*   **Lưu ý:** Hồ sơ miễn giảm cần được nộp tại Phòng Tài vụ trước ngày 15/09 hàng năm.\n\nNguồn: 06 Hoc Phi Dong Gop — 1. Học phí (documents/06_hoc_phi_dong_gop.md)\nNguồn: 06 Hoc Phi Dong Gop — 3. Miễn giảm học phí (documents/06_hoc_phi_dong_gop.md)",
+      "tools_called": [
+        "search_documents"
+      ],
+      "citations": [
+        {
+          "source_path": "documents/06_hoc_phi_dong_gop.md",
+          "title": "06 Hoc Phi Dong Gop",
+          "section": "1. Học phí"
+        },
+        {
+          "source_path": "documents/04_lich_hoc_lich_thi.md",
+          "title": "04 Lich Hoc Lich Thi",
+          "section": "2. Lịch kiểm tra giữa kỳ"
+        },
+        {
+          "source_path": "documents/04_lich_hoc_lich_thi.md",
+          "title": "04 Lich Hoc Lich Thi",
+          "section": "1. Thời gian năm học"
+        },
+        {
+          "source_path": "documents/06_hoc_phi_dong_gop.md",
+          "title": "06 Hoc Phi Dong Gop",
+          "section": "3. Miễn giảm học phí"
+        },
+        {
+          "source_path": "documents/08_thong_tin_lien_he.md",
+          "title": "08 Thong Tin Lien He",
+          "section": "5. Đội ngũ giáo viên chủ nhiệm"
+        }
+      ],
+      "elapsed_ms": 17222,
+      "success": true
+    },
+    {
+      "id": "C01",
+      "scenario": "Câu hỏi hỗn hợp (structured + docs)",
+      "role": "parent",
+      "covers": "Kiến trúc lai: gọi cả function-calling và search_documents (UC09)",
+      "question": "Lê Nguyễn Minh Trí lớp 7A10 có đạt loại Xuất sắc theo quy định không?",
+      "answer": "Chào bạn, dựa trên dữ liệu học tập của em Lê Nguyễn Minh Trí (lớp 7A10, học kỳ 2 năm học 2024-2025), kết quả học tập của em như sau:\n\n*   **Học lực:** Tốt\n*   **Hạnh kiểm:** Tốt\n*   **Điểm trung bình (GPA):** 8.8\n\nTheo quy định của nhà trường, học sinh đạt danh hiệu **\"Học sinh Xuất sắc\"** cần đáp ứng các tiêu chí: học lực Tốt, hạnh kiểm Tốt và điểm trung bình các môn **từ 9.0 trở lên**.\n\nVì em Lê Nguyễn Minh Trí có điểm trung bình là 8.8 (chưa đạt ngưỡng 9.0), nên hiện tại em **chưa đạt danh hiệu Học sinh Xuất sắc** theo quy định này.\n\nNguồn: 05 Khen Thuong Ky Luat — 1.1. Danh hiệu cuối học kỳ (documents/05_khen_thuong_ky_luat.md)",
+      "tools_called": [
+        "get_student_overview",
+        "search_documents"
+      ],
+      "citations": [
+        {
+          "source_path": "documents/05_khen_thuong_ky_luat.md",
+          "title": "05 Khen Thuong Ky Luat",
+          "section": "1.1. Danh hiệu cuối học kỳ"
+        },
+        {
+          "source_path": "documents/05_khen_thuong_ky_luat.md",
+          "title": "05 Khen Thuong Ky Luat",
+          "section": "1.2. Mức thưởng"
+        },
+        {
+          "source_path": "documents/03_chuong_trinh_lop_7.md",
+          "title": "03 Chuong Trinh Lop 7",
+          "section": "7. Tài liệu tham khảo"
+        },
+        {
+          "source_path": "documents/01_noi_quy_hoc_sinh.md",
+          "title": "01 Noi Quy Hoc Sinh",
+          "section": "5. Học tập"
+        },
+        {
+          "source_path": "documents/01_noi_quy_hoc_sinh.md",
+          "title": "01 Noi Quy Hoc Sinh",
+          "section": "8. Hiệu lực"
+        }
+      ],
+      "elapsed_ms": 17922,
+      "success": true
+    },
+    {
+      "id": "E01",
+      "scenario": "Tên trùng → hỏi lại (anti-hallucination)",
+      "role": "parent",
+      "covers": "Dedupe ambiguity + UX hỏi lại (giảm hallucination)",
+      "question": "Điểm tổng kết của Nguyễn Đăng Khôi học kỳ 2",
+      "answer": "Chào bạn, hiện tại hệ thống tìm thấy có 3 học sinh tên **Nguyễn Đăng Khôi** có dữ liệu điểm học kỳ 2 năm học 2024-2025. Để tôi có thể cung cấp chính xác thông tin bạn cần, vui lòng cho biết học sinh đó đang học lớp mấy trong các lớp sau:\n\n*   **Nguyễn Đăng Khôi** (Lớp 6A9, Mã HS: 2405055502)\n*   **Nguyễn Đăng Khôi** (Lớp 7A8, Mã HS: 2205987469)\n*   **Nguyễn Đăng Khôi** (Lớp 7A2, Mã HS: 2207883574)\n\nRất mong nhận được phản hồi từ bạn.",
+      "tools_called": [
+        "get_all_subject_scores_for_student"
+      ],
+      "citations": [],
+      "elapsed_ms": 12185,
+      "success": true
+    },
+    {
+      "id": "L03",
+      "scenario": "RBAC: phụ huynh gọi tool quản trị → từ chối",
+      "role": "parent",
+      "covers": "RBAC gating tại dispatcher (tool ADMIN_ONLY)",
+      "question": "Top 5 lớp có điểm trung bình môn Toán cao nhất",
+      "answer": "Rất tiếc, tôi không thể cung cấp thông tin xếp hạng điểm trung bình các lớp vì đây là dữ liệu dành riêng cho giáo viên và quản trị nhà trường.\n\nNếu bạn là phụ huynh cần biết thông tin về kết quả học tập của con em mình, tôi rất sẵn lòng hỗ trợ. Bạn có thể cung cấp tên học sinh để tôi kiểm tra bảng điểm chi tiết hoặc thứ hạng cụ thể của học sinh đó trong lớp nhé.",
+      "tools_called": [
+        "rank_classes_by_subject_average"
+      ],
+      "citations": [],
+      "elapsed_ms": 4094,
+      "success": true
+    },
+    {
+      "id": "M02",
+      "scenario": "RBAC: admin gọi tool quản trị → cho phép",
+      "role": "admin",
+      "covers": "Use case quản trị (UC11) - tool admin-only chạy thành công",
+      "question": "Top 5 lớp có điểm trung bình môn Toán cao nhất khối 7 học kỳ 2",
+      "answer": "Chào bạn, dưới đây là danh sách 5 lớp khối 7 có điểm trung bình môn Toán cao nhất trong học kỳ 2:\n\n1. **Lớp 7a10**: 9.27 điểm\n2. **Lớp 7a9**: 8.84 điểm\n3. **Lớp 7a7**: 7.99 điểm\n4. **Lớp 7a2**: 7.78 điểm\n5. **Lớp 7a6**: 7.55 điểm\n\nHy vọng thông tin này hữu ích với bạn!",
+      "tools_called": [
+        "rank_classes_by_subject_average"
+      ],
+      "citations": [],
+      "elapsed_ms": 2015,
+      "success": true
+    }
+  ]
+}

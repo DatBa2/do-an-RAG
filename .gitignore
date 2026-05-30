@@ -8,3 +8,31 @@ venv/
 rag_system/venv/
 rag_elastic_docker/venv/
 .DS_Store
+
+# Secrets
+.env
+es/.env
+*.env.local
+
+# Local state
+.last_run_timestamp
+es/.last_run_timestamp
+es/data/
+data/
+
+# Logs
+*.log
+logs/
+
+# Python virtualenvs (added 2026-05)
+.venv/
+.decuong-venv/
+*/.venv/
+# env temp / backups
+*.env.tmp
+.env.tmp
+# working docx backups (not for repo)
+*.before_optimize.BACKUP.docx
+*.before_font_fix*.docx
+Decuong_NguyenBaDat_v3.optimized.docx
+~$*.docx

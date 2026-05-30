@@ -1,0 +1,175 @@
+================================================================
+TÓM TẮT ĐỀ CƯƠNG ĐỀ ÁN TỐT NGHIỆP THẠC SĨ
+Tác giả: Nguyễn Bá Đạt
+File gốc: Decuong_NguyenBaDat_v3.before_font_fix.docx
+Quy mô: ~17.700 từ, 526 đoạn, 29 bảng
+================================================================
+
+----------------------------------------------------------------
+1. TÊN ĐỀ ÁN (ngắn gọn)
+----------------------------------------------------------------
+Xây dựng và đánh giá hệ thống trợ lý ảo AI dựa trên kiến trúc
+Retrieval-Augmented Generation (RAG) cho dữ liệu nội bộ của
+trường THCS - tiếng Việt, có phân quyền theo vai trò.
+
+----------------------------------------------------------------
+2. VẤN ĐỀ ĐANG GIẢI QUYẾT
+----------------------------------------------------------------
+- LLM đại chúng (GPT-4, Gemini, Llama 3.x) có 2 nhược điểm khi
+  dùng trong nội bộ:
+    (a) Kiến thức bị "đóng băng" tại thời điểm huấn luyện
+        → không biết dữ liệu nghiệp vụ của trường.
+    (b) Ảo giác (hallucination) - bịa thông tin nghe hợp lý
+        nhưng không có căn cứ.
+- Trường THCS có 2 loại dữ liệu cùng tồn tại:
+    + Dữ liệu CÓ CẤU TRÚC (điểm, hồ sơ học sinh từ vnEdu/SMAS).
+    + Dữ liệu PHI CẤU TRÚC (nội quy, quy chế, công văn, lịch).
+- Đa số hệ RAG học thuật chỉ phục vụ 1 trong 2 loại → đề án
+  này nhắm vào kiến trúc LAI xử lý cả hai cùng lúc.
+
+----------------------------------------------------------------
+3. ĐIỂM MỚI CHÍNH (đóng góp)
+----------------------------------------------------------------
+(1) Kiến trúc RAG LAI cho tiếng Việt:
+    - Function Calling → dữ liệu cấu trúc (chính xác, JSON schema).
+    - Hybrid Retrieval (BM25 + KNN dense vector + RRF)
+      → dữ liệu phi cấu trúc.
+    - Lớp Advisor định tuyến / hợp nhất kết quả.
+(2) RBAC 2 tầng + ACL cấp tài liệu:
+    - Pre-filter ngay tại Elasticsearch (trường allowed_roles).
+    - Post-gate ở dispatcher cho công cụ admin-only.
+    - Bám khuyến nghị OWASP LLM Top 10 - 2025.
+(3) Bộ test set ~80 case phủ 13 nhóm tình huống (truy vấn cấu
+    trúc, tài liệu, hỗn hợp, không dấu, mơ hồ, prompt
+    injection, vượt quyền...).
+
+----------------------------------------------------------------
+4. KIẾN TRÚC HỆ THỐNG (5 lớp)
+----------------------------------------------------------------
+Lớp 1 - GIAO DIỆN
+    • Telegram bot: phụ huynh + giáo viên.
+    • Streamlit dashboard: admin (5 trang: Overview, Playground,
+      Retrieval Inspector, Audit log, Document Manager).
+
+Lớp 2 - ĐIỀU PHỐI (Advisor / Orchestration)
+    (a) Query Rewriter: viết lại câu hội thoại đa lượt.
+    (b) Planner: chọn tool/retriever (function calling Gemini 2.5).
+    (c) Dispatcher: thực thi tool + kiểm tra RBAC.
+    (d) Verifier (Self-RAG lite): hậu kiểm giảm ảo giác.
+
+Lớp 3 - TRUY XUẤT (2 nhánh song song)
+    • 18 tool Function Calling → index hs_records (cấu trúc).
+    • Hybrid Document Search (BM25 + KNN + RRF native ES 8.8)
+      → index internal_docs (phi cấu trúc).
+
+Lớp 4 - DỮ LIỆU
+    • Elasticsearch 8.x: 2 index (hs_records, internal_docs).
+    • SQLite: audit log, cache embedding, lịch sử hội thoại.
+
+Lớp 5 (xuyên suốt) - BẢO MẬT & AUDIT
+    • RBAC 3 vai trò: parent / teacher / admin.
+    • ACL theo trường allowed_roles trên từng document.
+
+----------------------------------------------------------------
+5. PHẠM VI DỮ LIỆU
+----------------------------------------------------------------
+- Dữ liệu cấu trúc: ~783 hồ sơ học sinh, 32 lớp khối 6-9,
+  8 môn chính, năm học 2024-2025 (kết xuất JSON từ vnEdu).
+- Dữ liệu phi cấu trúc: 8 tài liệu mẫu (~3.500 từ) - nội quy,
+  Thông tư 22/2021/TT-BGDĐT, lịch học, biểu phí, biên bản
+  họp PH, hướng dẫn GVCN. Mỗi tài liệu có nhãn allowed_roles.
+- Mô hình sinh: Gemini 2.5 Flash/Pro (có phương án thay thế
+  Llama 3.x / Mistral qua Ollama).
+- Embedding: text-embedding-004 (Google), so sánh với
+  PhoBERT, sup-SimCSE-Vietnamese, bge-m3.
+
+----------------------------------------------------------------
+6. TRIỂN KHAI
+----------------------------------------------------------------
+- Docker Compose, 4 dịch vụ: Elasticsearch + indexer +
+  Telegram bot + Streamlit dashboard.
+- Cấu trúc mã: thư mục es/ với ~14 module + 4 script đánh giá
+  (~2.500-3.000 dòng Python). Các module chính:
+    config.py, es_index.py, es_main.py (class Advisor),
+    es_tele_bot.py, admin_dashboard.py,
+    modules/{es_school_qna, doc_search, ingest_docs,
+              embeddings, query_rewrite, rbac, audit}.py,
+    evaluation/ (test set + runner + ablation + report).
+
+----------------------------------------------------------------
+7. ĐÁNH GIÁ - 9 CÂU HỎI NGHIÊN CỨU (RQ)
+----------------------------------------------------------------
+RQ1: Hybrid retrieval có vượt từng phương pháp đơn lẻ trên
+     nhóm câu hỏi tài liệu?
+RQ2: Function Calling có cao hơn dense retrieval trên dữ liệu
+     cấu trúc?
+RQ3: Query rewriting có cải thiện hội thoại đa lượt?
+RQ4: Self-RAG verifier có giảm ảo giác, chi phí latency có
+     tương xứng?
+RQ5: Kích thước chunk + overlap - có sweet spot?
+RQ6: Bền vững với biến thể tiếng Việt (không dấu, viết tắt,
+     sai chính tả)?
+RQ7: Chịu được prompt injection và rò rỉ dữ liệu?
+RQ8: RBAC + ACL có thực sự chặn truy cập vượt quyền?
+RQ9: Có phục vụ được use case quản trị (admin/teacher),
+     không chỉ chatbot phụ huynh?
+
+----------------------------------------------------------------
+8. BASELINE SO SÁNH (5 phương án)
+----------------------------------------------------------------
+B1 - LLM thuần (Gemini 2.5 Flash, không RAG)        [cận dưới]
+B2 - BM25 only (tìm kiếm truyền thống nâng cấp)
+B3 - Vector only (KNN dense thuần)
+B4 - Function Calling only (không có search_documents)
+B5 - Hybrid RAG đầy đủ (đề xuất của đề án)         [hệ đề xuất]
+
+----------------------------------------------------------------
+9. BỘ CHỈ SỐ ĐÁNH GIÁ (3 nhóm, 8 chỉ số)
+----------------------------------------------------------------
+Nhóm 1 - Chất lượng truy xuất:
+    I1  Recall@5
+    I2  Context Precision (RAGAS)
+    I3  Tool Recall (gọi đúng tool function calling)
+Nhóm 2 - Chất lượng sinh ngữ:
+    I4  Answer Accuracy (LLM-as-judge: Gemini 2.5 Pro + 20% người)
+    I5  Faithfulness (RAGAS) - chỉ số then chốt giảm ảo giác
+    I6  Citation Match (trích đúng nguồn)
+Nhóm 3 - Vận hành & an toàn:
+    I7  Latency p50 / p95
+    I8  Refusal Accuracy (từ chối đúng khi vượt quyền)
+
+----------------------------------------------------------------
+10. CẤU TRÚC ĐỀ CƯƠNG
+----------------------------------------------------------------
+I.   MỞ ĐẦU (lý do, mục tiêu, đối tượng, phương pháp,
+     đóng góp, bố cục)
+II.  NỘI DUNG
+     - CHƯƠNG 1: Tổng quan & cơ sở lý thuyết (RAG 3 thế hệ,
+                 BM25/Dense/Hybrid+RRF, ES, LLM + function
+                 calling, Query Rewriting, Self-RAG, Chunking,
+                 bảo mật OWASP, phương pháp đánh giá RAG)
+     - CHƯƠNG 2: Phân tích & thiết kế (bối cảnh, người dùng,
+                 đặc trưng dữ liệu, yêu cầu chức năng/phi
+                 chức năng, bảo mật theo TT 22/2021, kiến
+                 trúc tổng quan)
+     - CHƯƠNG 3: Thiết kế & xây dựng (kiến trúc tổng thể,
+                 lớp dữ liệu, lớp truy xuất + 18 tool,
+                 Advisor, UI, RBAC/ACL, Docker Compose)
+     - CHƯƠNG 4: Kế hoạch thử nghiệm & đánh giá (9 RQ,
+                 test set 80 case, 5 baseline, 8 chỉ số,
+                 ablation, kết quả sơ bộ)
+III. DỰ KIẾN KẾT QUẢ & HẠN CHẾ & HƯỚNG PHÁT TRIỂN
+IV.  TÀI LIỆU THAM KHẢO
+V.   KẾ HOẠCH THỰC HIỆN
+Phụ lục A: Mapping Elasticsearch + truy vấn Hybrid RRF.
+
+----------------------------------------------------------------
+11. CỐT LÕI CẦN NHỚ (3 câu)
+----------------------------------------------------------------
+- Trợ lý ảo RAG LAI cho trường THCS, gộp Function Calling
+  (dữ liệu cấu trúc) + Hybrid BM25/KNN/RRF (tài liệu).
+- Bảo mật bằng RBAC 3 vai trò + ACL cấp tài liệu, theo
+  OWASP LLM Top 10 - 2025.
+- Đánh giá bằng 80 test case, 5 baseline, 8 chỉ số -
+  chứng minh đóng góp của từng khối qua ablation.
+================================================================

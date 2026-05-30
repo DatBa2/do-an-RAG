@@ -1,217 +1,321 @@
-import os
+"""ETL: đọc JSON học sinh từ DATA_DIR, index vào Elasticsearch.
+
+CLI:
+  python es_index.py                  # incremental, dựa trên .last_run_timestamp
+  python es_index.py --full-refresh   # xoá index, index lại toàn bộ
+  python es_index.py --delete         # xoá index (có xác nhận)
+  python es_index.py --ensure         # tạo index nếu chưa tồn tại (cho container init)
+"""
 import json
-import re
-import math
-import time
+import logging
+import os
 import sys
+import time
 from datetime import datetime
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from elasticsearch import Elasticsearch, helpers
 
-# --- CẤU HÌNH ---
-ES_HOST = os.getenv("ES_HOST", "http://localhost:9200")
-INDEX_NAME = os.getenv("ES_INDEX", "hs_records")
-BULK_BATCH_SIZE = int(os.getenv("BULK_BATCH_SIZE", "1000"))
-TIMESTAMP_FILE = ".last_run_timestamp" # Tên file để lưu dấu thời gian
+from modules import config
 
-# Kết nối ES
-es = Elasticsearch(ES_HOST)
+config.configure_logging()
+log = logging.getLogger("es_index")
 
-# --- CÁC HÀM TIỆN ÍCH ---
+es = Elasticsearch(config.ES_HOST, request_timeout=30)
 
-def create_index(index_name: str = INDEX_NAME) -> None:
-    """Xóa index cũ (nếu có) và tạo một index mới với mapping đã định nghĩa."""
-    if es.indices.exists(index=index_name):
-        print(f"[INFO] Đang xóa index cũ: {index_name}...")
-        es.indices.delete(index=index_name)
-    print(f"[INFO] Đang tạo index mới: {index_name}...")
-    body = {
-        "settings": {
-            "analysis": {
-                "analyzer": {
-                    "vn_text": {"type": "custom", "tokenizer": "standard", "filter": ["lowercase", "asciifolding"]},
-                },
-                "normalizer": {
-                    "vn_normalizer": {"type": "custom", "filter": ["lowercase", "asciifolding"]}
-                }
-            }
+INDEX_SETTINGS = {
+    "analysis": {
+        "analyzer": {
+            "vn_text": {
+                "type": "custom",
+                "tokenizer": "standard",
+                "filter": ["lowercase", "asciifolding"],
+            },
         },
-        "mappings": {
-            "dynamic": True,
-            "properties": {
-                "doc_type": {"type": "keyword"},
-                "full_name": {"type": "text", "analyzer": "vn_text", "fields": {
-                    "raw": {"type": "keyword", "normalizer": "vn_normalizer"}
-                }},
-                "class_name": {"type": "text", "analyzer": "vn_text", "fields": {
-                    "raw": {"type": "keyword", "normalizer": "vn_normalizer"}
-                }},
-                "year": {"type": "keyword"},
-                "semester": {"type": "integer"},
-                "overall_gpa": {"type": "float"},
-                "subject": {"type": "text", "analyzer": "vn_text", "fields": {
-                    "raw": {"type": "keyword", "normalizer": "vn_normalizer"}
-                }},
-                "scores": {
-                    "properties": {
-                        "TX": {"type": "float"},
-                        "GK": {"type": "float"},
-                        "CK": {"type": "float"},
-                        "TK": {"type": "float"},
-                    }
-                },
-            }
+        "normalizer": {
+            "vn_normalizer": {"type": "custom", "filter": ["lowercase", "asciifolding"]},
         },
     }
-    es.indices.create(index=index_name, settings=body["settings"], mappings=body["mappings"])
-    print(f"[OK] Đã tạo index {index_name} thành công.")
+}
 
-def delete_index(index_name: str = INDEX_NAME) -> None:
-    """Hàm xóa index với bước xác nhận để đảm bảo an toàn."""
+INDEX_MAPPINGS = {
+    "dynamic": True,
+    "properties": {
+        "doc_type": {"type": "keyword"},
+        "student_id": {"type": "keyword"},
+        "full_name": {
+            "type": "text",
+            "analyzer": "vn_text",
+            "fields": {"raw": {"type": "keyword", "normalizer": "vn_normalizer"}},
+        },
+        "class_name": {
+            "type": "text",
+            "analyzer": "vn_text",
+            "fields": {"raw": {"type": "keyword", "normalizer": "vn_normalizer"}},
+        },
+        "year": {"type": "keyword"},
+        "semester": {"type": "integer"},
+        "overall_gpa": {"type": "float"},
+        "conduct": {"type": "keyword"},
+        "academic": {"type": "keyword"},
+        "promotion": {"type": "keyword"},
+        "homeroom_comment": {"type": "text", "analyzer": "vn_text"},
+        "subject": {
+            "type": "text",
+            "analyzer": "vn_text",
+            "fields": {"raw": {"type": "keyword", "normalizer": "vn_normalizer"}},
+        },
+        "subject_comment": {"type": "text", "analyzer": "vn_text"},
+        "scores": {
+            "properties": {
+                "TX": {"type": "float"},
+                "GK": {"type": "float"},
+                "CK": {"type": "float"},
+                "TK": {"type": "float"},
+            }
+        },
+        "attendance": {
+            "properties": {
+                "phep": {"type": "integer"},
+                "khong_phep": {"type": "integer"},
+                "bo_tiet": {"type": "integer"},
+            }
+        },
+        "raw_path": {"type": "keyword", "index": False},
+    },
+}
+
+
+def ensure_index(index_name: str = config.ES_INDEX) -> bool:
+    """Tạo index nếu chưa tồn tại. Trả về True nếu vừa tạo mới."""
+    if es.indices.exists(index=index_name):
+        return False
+    log.info("Tạo index %s với mapping mới...", index_name)
+    es.indices.create(index=index_name, settings=INDEX_SETTINGS, mappings=INDEX_MAPPINGS)
+    return True
+
+
+def create_index(index_name: str = config.ES_INDEX) -> None:
+    if es.indices.exists(index=index_name):
+        log.info("Xoá index cũ %s...", index_name)
+        es.indices.delete(index=index_name)
+    log.info("Tạo index mới %s...", index_name)
+    es.indices.create(index=index_name, settings=INDEX_SETTINGS, mappings=INDEX_MAPPINGS)
+
+
+def delete_index(index_name: str = config.ES_INDEX) -> None:
     if not es.indices.exists(index=index_name):
-        print(f"[INFO] Index '{index_name}' không tồn tại. Không có gì để xóa.")
+        log.info("Index %s không tồn tại.", index_name)
         return
+    print(f"!!! CẢNH BÁO !!! Sắp xoá index '{index_name}'. Toàn bộ dữ liệu sẽ mất.")
+    if input("Nhập 'delete' để xác nhận: ").strip().lower() != "delete":
+        log.info("Đã huỷ.")
+        return
+    es.indices.delete(index=index_name)
+    if config.TIMESTAMP_FILE.exists():
+        config.TIMESTAMP_FILE.unlink()
+    log.info("Đã xoá index %s.", index_name)
 
-    print(f"!!! CẢNH BÁO !!!")
-    print(f"Bạn có chắc chắn muốn XÓA TOÀN BỘ index '{index_name}' không?")
-    print("Hành động này không thể hoàn tác và toàn bộ dữ liệu sẽ bị mất vĩnh viễn.")
-    confirm = input("Nhập 'delete' để xác nhận: ")
 
-    if confirm.strip().lower() == 'delete':
+def _to_floats(items: List[Dict[str, Any]]) -> List[float]:
+    out = []
+    for x in items:
+        v = x.get("diem")
+        if v is None:
+            continue
         try:
-            es.indices.delete(index=index_name)
-            print(f"[OK] Đã xóa thành công index '{index_name}'.")
-            # Xóa cả file timestamp để lần chạy sau được sạch
-            if os.path.exists(TIMESTAMP_FILE):
-                os.remove(TIMESTAMP_FILE)
-                print(f"[INFO] Đã xóa file timestamp '{TIMESTAMP_FILE}'.")
-        except Exception as e:
-            print(f"[ERROR] Xóa index thất bại: {e}")
-    else:
-        print("[INFO] Thao tác đã được hủy.")
+            out.append(float(v))
+        except (ValueError, TypeError):
+            pass
+    return out
 
 
-def extract_docs_from_json(data: Dict[str, Any], raw_path: str = "") -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Trích xuất student_doc và mark_docs từ dữ liệu JSON gốc."""
+def _avg(values: List[float]) -> Optional[float]:
+    return round(sum(values) / len(values), 2) if values else None
+
+
+def extract_docs_from_json(
+    data: Dict[str, Any], raw_path: str = ""
+) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
     user = data.get("data", {}).get("user", {})
-    soDiem = data.get("data", {}).get("soDiem", {})
-    mon_diem = soDiem.get("mon_hoc_tinh_diem", {})
-    mon_nhan_xet = soDiem.get("mon_hoc_nhan_xet", {})
-    tong_ket = soDiem.get("tong_ket", {})
-    
-    if not user.get("full_name") or not user.get("ma_hoc_sinh"):
-        return None, []
+    so_diem = data.get("data", {}).get("soDiem", {})
+    mon_diem = so_diem.get("mon_hoc_tinh_diem", {}) or {}
+    mon_nhan_xet = so_diem.get("mon_hoc_nhan_xet", {}) or {}
+    tong_ket = so_diem.get("tong_ket", {}) or {}
+    a_chuyen_can = data.get("data", {}).get("aChuyenCan", {}) or {}
 
     full_name = user.get("full_name")
+    student_id = user.get("ma_hoc_sinh") or user.get("hoc_sinh_id")
+    if not full_name or not student_id:
+        return None, []
+
     class_name = user.get("ten_lop")
     year = user.get("nam_hoc_text") or user.get("nam_hoc")
-    semester = data.get("data", {}).get("hocKyID") or soDiem.get("hoc_ky")
-    student_id = user.get("ma_hoc_sinh") or user.get("hoc_sinh_id")
-    aChuyenCan = data.get("data", {}).get("aChuyenCan", {})
+    semester = data.get("data", {}).get("hocKyID") or so_diem.get("hoc_ky")
+    sem_int = int(semester) if semester is not None else None
+    year_str = str(year) if year is not None else None
 
     student_doc = {
-        "doc_type": "student", "id": f"student::{student_id}::sem{semester}::year{year}",
-        "student_id": student_id, "full_name": full_name, "class_name": class_name,
-        "year": str(year) if year is not None else None,
-        "semester": int(semester) if semester is not None else None,
-        "attendance": {"phep": aChuyenCan.get("phep"), "khong_phep": aChuyenCan.get("khong_phep"), "bo_tiet": aChuyenCan.get("bo_tiet")},
-        "conduct": tong_ket.get("hanh_kiem"), "academic": tong_ket.get("hoc_luc"),
-        "promotion": tong_ket.get("len_lop"), "homeroom_comment": soDiem.get("nhan_xet_gvcn"),
-        "overall_gpa": tong_ket.get("diem_tk"), "raw_path": raw_path,
+        "doc_type": "student",
+        "id": f"student::{student_id}::sem{sem_int}::year{year_str}",
+        "student_id": str(student_id),
+        "full_name": full_name,
+        "class_name": class_name,
+        "year": year_str,
+        "semester": sem_int,
+        "attendance": {
+            "phep": a_chuyen_can.get("phep"),
+            "khong_phep": a_chuyen_can.get("khong_phep"),
+            "bo_tiet": a_chuyen_can.get("bo_tiet"),
+        },
+        "conduct": tong_ket.get("hanh_kiem"),
+        "academic": tong_ket.get("hoc_luc"),
+        "promotion": tong_ket.get("len_lop"),
+        "homeroom_comment": so_diem.get("nhan_xet_gvcn"),
+        "overall_gpa": tong_ket.get("diem_tk"),
+        "raw_path": raw_path,
     }
-    mark_docs = []
-    def _avg(values: List[float]) -> Optional[float]:
-        return sum(values) / len(values) if values else None
-        
-    def _emit_mark(subject_name: str, mh: Dict[str, Any]):
-        def _to_floats(xs):
-            out = []
-            for x in xs:
-                if x.get("diem") is not None:
-                    try: out.append(float(x['diem']))
-                    except (ValueError, TypeError): pass
-            return out
-            
+
+    mark_docs: List[Dict[str, Any]] = []
+
+    def emit_mark(subject_name: str, mh: Dict[str, Any]) -> None:
+        tx_vals = _to_floats(mh.get("TX", []))
+        gk_vals = _to_floats(mh.get("GK", []))
+        ck_vals = _to_floats(mh.get("CK", []))
+        tk_vals = _to_floats(mh.get("TK", []))
         scores = {
-            "TX": _avg(_to_floats(mh.get("TX", []))),
-            "GK": _avg(_to_floats(mh.get("GK", []))),
-            "CK": _avg(_to_floats(mh.get("CK", []))),
-            "TK": _to_floats(mh.get("TK", []))[-1] if _to_floats(mh.get("TK", [])) else None,
+            "TX": _avg(tx_vals),
+            "GK": _avg(gk_vals),
+            "CK": _avg(ck_vals),
+            "TK": tk_vals[-1] if tk_vals else None,
         }
         mark_docs.append({
-            "doc_type": "mark", "id": f"mark::{student_id}::{subject_name}::sem{semester}::year{year}",
-            "student_id": student_id, "full_name": full_name, "class_name": class_name,
-            "year": str(year) if year is not None else None,
-            "semester": int(semester) if semester is not None else None,
-            "subject": subject_name, "scores": scores,
-            "subject_comment": mh.get("nhan_xet", ""), "raw_path": raw_path,
+            "doc_type": "mark",
+            "id": f"mark::{student_id}::{subject_name}::sem{sem_int}::year{year_str}",
+            "student_id": str(student_id),
+            "full_name": full_name,
+            "class_name": class_name,
+            "year": year_str,
+            "semester": sem_int,
+            "subject": subject_name,
+            "scores": scores,
+            "subject_comment": mh.get("nhan_xet", "") or "",
+            "raw_path": raw_path,
         })
-        
+
     for _, mh in mon_diem.items():
-        if ten := mh.get("ten_mon_hoc"): _emit_mark(ten, mh)
+        ten = mh.get("ten_mon_hoc")
+        if ten:
+            emit_mark(ten, mh)
     for _, mh in mon_nhan_xet.items():
-        if ten := mh.get("ten_mon_hoc"): _emit_mark(ten, mh)
-        
+        ten = mh.get("ten_mon_hoc")
+        if ten:
+            emit_mark(ten, mh)
+
     return student_doc, mark_docs
+
 
 def read_last_run_timestamp() -> float:
     try:
-        with open(TIMESTAMP_FILE, "r") as f: return float(f.read().strip())
-    except (FileNotFoundError, ValueError): return 0.0
+        return float(config.TIMESTAMP_FILE.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return 0.0
+
 
 def write_current_timestamp() -> None:
-    with open(TIMESTAMP_FILE, "w") as f: f.write(str(time.time()))
+    config.TIMESTAMP_FILE.write_text(str(time.time()))
 
-def bulk_index_from_dir(data_dir: str = "./organized_results", index_name: str = INDEX_NAME, full_refresh: bool = False) -> None:
-    last_run_ts = 0.0
-    if not full_refresh:
-        last_run_ts = read_last_run_timestamp()
-        if last_run_ts > 0: print(f"[INFO] Bắt đầu cập nhật tăng trưởng từ lần chạy lúc: {datetime.fromtimestamp(last_run_ts)}")
-        else: print("[INFO] File timestamp không tìm thấy. Chạy như lần đầu tiên...")
-    else: print("[INFO] Bắt đầu index lại toàn bộ (full refresh)...")
 
-    actions, count_files_processed, total_files_scanned = [], 0, 0
+def bulk_index_from_dir(
+    data_dir: str = config.DATA_DIR,
+    index_name: str = config.ES_INDEX,
+    full_refresh: bool = False,
+) -> int:
+    last_run_ts = 0.0 if full_refresh else read_last_run_timestamp()
+    if full_refresh:
+        log.info("Full-refresh: index lại toàn bộ.")
+    elif last_run_ts:
+        log.info("Incremental từ %s", datetime.fromtimestamp(last_run_ts))
+    else:
+        log.info("Chạy lần đầu, index toàn bộ.")
+
+    actions: List[Dict[str, Any]] = []
+    scanned = processed = indexed = 0
+
+    if not os.path.isdir(data_dir):
+        log.error("DATA_DIR không tồn tại: %s", data_dir)
+        return 0
+
     for root, _, files in os.walk(data_dir):
         for fn in files:
-            if not fn.lower().endswith(".json"): continue
-            total_files_scanned += 1
+            if not fn.lower().endswith(".json"):
+                continue
+            scanned += 1
             path = os.path.join(root, fn)
-            file_mod_time = os.path.getmtime(path)
-            if not full_refresh and file_mod_time < last_run_ts: continue
-            count_files_processed += 1
+            if not full_refresh and os.path.getmtime(path) < last_run_ts:
+                continue
+            processed += 1
             try:
-                with open(path, "r", encoding="utf-8") as f: data = json.load(f)
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
                 student_doc, mark_docs = extract_docs_from_json(data, raw_path=path)
-                if not student_doc: continue
-                actions.append({"_index": index_name, "_id": student_doc["id"], "_op_type": "index", "_source": student_doc})
-                for md in mark_docs: actions.append({"_index": index_name, "_id": md["id"], "_op_type": "index", "_source": md})
-                if len(actions) >= BULK_BATCH_SIZE:
-                    helpers.bulk(es, actions); actions.clear()
-                    print(f"[Bulk] Đã index ~{BULK_BATCH_SIZE} văn bản...")
-            except Exception as ex: print(f"[WARN] Bỏ qua file {path}: {ex}")
+                if not student_doc:
+                    continue
+                actions.append({
+                    "_index": index_name,
+                    "_id": student_doc["id"],
+                    "_op_type": "index",
+                    "_source": student_doc,
+                })
+                for md in mark_docs:
+                    actions.append({
+                        "_index": index_name,
+                        "_id": md["id"],
+                        "_op_type": "index",
+                        "_source": md,
+                    })
+                if len(actions) >= config.BULK_BATCH_SIZE:
+                    helpers.bulk(es, actions)
+                    indexed += len(actions)
+                    log.info("Đã index batch (%d docs, tổng %d).", len(actions), indexed)
+                    actions.clear()
+            except Exception as ex:
+                log.warning("Bỏ qua %s: %s", path, ex)
+
     if actions:
         helpers.bulk(es, actions)
-        print(f"[Bulk] Đã index {len(actions)} văn bản cuối cùng.")
-    if total_files_scanned > 0: print(f"[OK] Hoàn thành. Đã quét {total_files_scanned} file, xử lý {count_files_processed} file mới/thay đổi.")
-    else: print("[INFO] Không tìm thấy file JSON nào trong thư mục được chỉ định.")
-    if count_files_processed > 0 and not full_refresh: write_current_timestamp()
+        indexed += len(actions)
+        log.info("Đã index batch cuối (%d docs, tổng %d).", len(actions), indexed)
 
-# --- ĐIỂM KHỞI CHẠY SCRIPT ---
+    log.info("Hoàn thành: quét %d file, xử lý %d, index %d docs.", scanned, processed, indexed)
 
-if __name__ == "__main__":
-    args = sys.argv
-    if '--delete' in args:
+    if processed > 0:
+        write_current_timestamp()
+
+    return indexed
+
+
+def main() -> int:
+    args = set(sys.argv[1:])
+    if "--delete" in args:
         delete_index()
-    elif '--full-refresh' in args:
+        return 0
+    if "--full-refresh" in args:
         create_index()
         bulk_index_from_dir(full_refresh=True)
-        write_current_timestamp()
+        return 0
+    if "--ensure" in args:
+        ensure_index()
+        return 0
+
+    if not es.indices.exists(index=config.ES_INDEX):
+        log.warning("Index %s chưa tồn tại — chạy full-refresh lần đầu.", config.ES_INDEX)
+        create_index()
+        bulk_index_from_dir(full_refresh=True)
     else:
-        if not es.indices.exists(index=INDEX_NAME):
-            print(f"[WARN] Index '{INDEX_NAME}' không tồn tại. Tự động chạy chế độ full-refresh lần đầu.")
-            create_index()
-            bulk_index_from_dir(full_refresh=True)
-            write_current_timestamp()
-        else:
-            bulk_index_from_dir(full_refresh=False)
+        bulk_index_from_dir(full_refresh=False)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

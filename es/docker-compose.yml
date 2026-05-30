@@ -1,7 +1,7 @@
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
-    container_name: elasticsearch
+    container_name: rag-elasticsearch
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
@@ -11,10 +11,67 @@ services:
     volumes:
       - esdata:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9200/_cat/health"]
-      interval: 30s
-      retries: 5
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health | grep -E '\"status\":\"(green|yellow)\"'"]
+      interval: 15s
+      retries: 10
       start_period: 30s
-      timeout: 30s
+      timeout: 10s
+
+  indexer:
+    build: .
+    container_name: rag-indexer
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - ES_HOST=http://elasticsearch:9200
+    volumes:
+      - ./organized_results:/app/organized_results:ro
+      - ./documents:/app/documents:ro
+      - botdata:/data
+    command: sh -c "python es_index.py && python -m modules.ingest_docs"
+    restart: "no"
+
+  bot:
+    build: .
+    container_name: rag-bot
+    depends_on:
+      indexer:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      - ES_HOST=http://elasticsearch:9200
+      - HISTORY_DB=/data/chat_history.db
+    volumes:
+      - ./organized_results:/app/organized_results:ro
+      - ./documents:/app/documents:ro
+      - botdata:/data
+    command: python es_tele_bot.py
+    restart: unless-stopped
+
+  dashboard:
+    build: .
+    container_name: rag-dashboard
+    depends_on:
+      indexer:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      - ES_HOST=http://elasticsearch:9200
+      - HISTORY_DB=/data/chat_history.db
+    volumes:
+      - ./organized_results:/app/organized_results:ro
+      - ./documents:/app/documents
+      - botdata:/data
+    ports:
+      - "8501:8501"
+    command: streamlit run admin_dashboard.py --server.address 0.0.0.0 --server.port 8501
+    restart: unless-stopped
+
 volumes:
   esdata:
+  botdata:

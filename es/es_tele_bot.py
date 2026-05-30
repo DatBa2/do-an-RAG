@@ -1,158 +1,284 @@
-import os
-import time
+"""Telegram bot front-end với RBAC, audit log, citation, history persist."""
 import asyncio
-import re
+import html
+import logging
+import sqlite3
+import time
+from contextlib import contextmanager
+from typing import Any, Dict, List
+
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
-from dotenv import load_dotenv
-from es_main import answer_question # Đã đổi tên file import
+from telegram.constants import ChatAction
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
-# Tải các biến môi trường từ tệp .env
-load_dotenv()
+from elasticsearch import Elasticsearch
 
-# --- Cấu hình ---
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "7201416424:AAHLwyzpJoyzr5A7CdmLxmrv1ZYe4HjcnvY")
+from modules import config
+from modules.audit import AUDIT
+from modules.rbac import role_of
+from modules.ingest_docs import ES_DOCS_INDEX, ingest_documents
+import es_index
+from es_main import AdvisorContext, get_advisor
 
-# --- Hàm tiện ích để xử lý MarkdownV2 ---
-def escape_markdown_v2(text: str) -> str:
-    """Thoát các ký tự đặc biệt cho chế độ MarkdownV2 của Telegram."""
-    # Các ký tự cần được thoát theo tài liệu của Telegram
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
-    # Sử dụng re.sub() để thay thế tất cả các ký tự trong danh sách bằng phiên bản đã được thoát
-    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
+config.configure_logging()
+log = logging.getLogger("bot")
 
-# --- Các hàm xử lý lệnh (Command Handlers) ---
-async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Gửi tin nhắn chào mừng khi người dùng gõ /start."""
-    await update.message.chat.send_action("typing")
-    welcome_text = (
-        "<b>Chào mừng bạn đến với Trợ lý AI Cố vấn học tập!</b>\n\n"
-        "Tôi có thể hỗ trợ bạn tra cứu điểm số, xếp hạng, và phân tích tình hình học tập của học sinh.\n\n"
-        "Gõ <b>/help</b> để xem danh sách lệnh hỗ trợ.\n"
-        "Gõ <b>/clear</b> để xoá lịch sử cuộc trò chuyện."
-    )
-    await update.message.reply_text(welcome_text, parse_mode='HTML')
+config.require_telegram()
 
 
-async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Hiển thị danh sách các lệnh hỗ trợ khi người dùng gõ /help."""
-    await update.message.chat.send_action("typing")
-    help_text = (
-        "<b>Danh sách lệnh hỗ trợ:</b>\n\n"
-        "<b>/start</b> - Bắt đầu trò chuyện với bot\n"
-        "<b>/help</b> - Hiển thị hướng dẫn sử dụng\n"
-        "<b>/clear</b> - Xoá các tin nhắn trong cuộc trò chuyện hiện tại\n\n"
-        "Bạn cũng có thể gửi tin nhắn để trò chuyện trực tiếp."
-    )
-    await update.message.reply_text(help_text, parse_mode='HTML')
+# --- SQLite history store ---
+class HistoryStore:
+    def __init__(self, db_path) -> None:
+        self.db_path = db_path
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._conn() as conn:
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS chat_history (
+                    chat_id INTEGER NOT NULL,
+                    ts REAL NOT NULL,
+                    role TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    PRIMARY KEY (chat_id, ts)
+                )"""
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_chat ON chat_history(chat_id, ts)")
 
-
-async def handle_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Xử lý lệnh /history (hiện là placeholder)."""
-    await update.message.chat.send_action("typing")
-    await update.message.reply_text("Chức năng xem lịch sử đang được phát triển.")
-
-
-async def handle_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Xoá các tin nhắn đã được bot ghi lại trong cuộc trò chuyện."""
-    chat_id = update.message.chat_id
-    messages_to_delete = context.chat_data.get('messages_to_delete', [])
-    
-    if not messages_to_delete:
-        await update.message.reply_text("Không có tin nhắn nào gần đây để xoá.")
-        return
-
-    messages_to_delete.append(update.message.message_id)
-    
-    count = 0
-    for message_id in messages_to_delete:
+    @contextmanager
+    def _conn(self):
+        conn = sqlite3.connect(self.db_path)
         try:
-            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-            count += 1
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+    def append(self, chat_id: int, role: str, text: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO chat_history(chat_id, ts, role, text) VALUES (?,?,?,?)",
+                (chat_id, time.time(), role, text),
+            )
+
+    def load(self, chat_id: int, turns: int) -> List[Dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT role, text FROM chat_history WHERE chat_id=? ORDER BY ts DESC LIMIT ?",
+                (chat_id, turns * 2),
+            ).fetchall()
+        rows.reverse()
+        return [{"role": r, "parts": [t]} for r, t in rows]
+
+    def clear(self, chat_id: int) -> int:
+        with self._conn() as conn:
+            cur = conn.execute("DELETE FROM chat_history WHERE chat_id=?", (chat_id,))
+            return cur.rowcount
+
+
+HISTORY = HistoryStore(config.HISTORY_DB)
+
+
+def bootstrap_index() -> None:
+    es = Elasticsearch(config.ES_HOST, request_timeout=30)
+    try:
+        if not es.ping():
+            log.warning("ES chưa sẵn sàng tại %s.", config.ES_HOST)
+            return
+    except Exception as e:
+        log.warning("Không kết nối được ES: %s", e)
+        return
+    if not es.indices.exists(index=config.ES_INDEX):
+        log.warning("Index %s chưa có — chạy full-refresh.", config.ES_INDEX)
+        es_index.create_index()
+        es_index.bulk_index_from_dir(full_refresh=True)
+    if not es.indices.exists(index=ES_DOCS_INDEX):
+        log.warning("Index %s chưa có — chạy ingest documents.", ES_DOCS_INDEX)
+        try:
+            ingest_documents(recreate=False)
         except Exception as e:
-            print(f"Không thể xoá tin nhắn {message_id} trong chat {chat_id}: {e}")
-
-    context.chat_data['messages_to_delete'] = []
-    context.chat_data['history'] = []
-    
-    confirmation_msg = await update.message.reply_text(f"Đã xoá thành công {count} tin nhắn.")
-    await asyncio.sleep(5)
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=confirmation_msg.message_id)
-    except Exception as e:
-        print(f"Không thể xoá tin nhắn xác nhận: {e}")
-
-# --- Hàm xử lý tin nhắn chính ---
-
-async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Xử lý tin nhắn văn bản thông thường từ người dùng."""
-    user_message = update.message.text
-    chat_id = update.message.chat_id
-
-    history_chat = context.chat_data.get('history', [])
-    messages_to_delete = context.chat_data.get('messages_to_delete', [])
-    
-    if not history_chat:
-        history_chat.extend([
-            {"role": "user", "parts": ["Xin chào, bạn là ai?"]},
-            {"role": "model", "parts": ["Xin chào! Tôi là Cố vấn học tập ảo, tôi có thể giúp bạn tra cứu thông tin về tình hình học tập của các em học sinh."]}
-        ])
-    
-    messages_to_delete.append(update.message.message_id)
-
-    answer = ""
-    start_time = time.time()
-
-    try:
-        await update.message.chat.send_action("typing")
-        
-        answer = answer_question(user_message, history_chat)
-
-        history_chat.append({"role": "user", "parts": [user_message]})
-        history_chat.append({"role": "model", "parts": [answer]})
-        
-        context.chat_data['history'] = history_chat[-20:]
-        
-    except Exception as e:
-        print(f"Lỗi khi gọi AI cho chat {chat_id}: {e}")
-        answer = "Rất tiếc, đã có lỗi xảy ra. Vui lòng thử lại."
-
-    end_time = time.time()
-    elapsed = end_time - start_time
-    
-    # THAY ĐỔI QUAN TRỌNG: Thoát các ký tự đặc biệt trong câu trả lời của AI
-    escaped_answer = escape_markdown_v2(answer)
-    
-    # Gắn thông tin thời gian vào cuối câu trả lời đã được thoát ký tự
-    final_reply_text = f"{escaped_answer}\n\n*Thời gian phản hồi:* `{elapsed:.2f} giây`"
-
-    reply_message = await update.message.reply_text(final_reply_text, parse_mode='MarkdownV2')
-    
-    messages_to_delete.append(reply_message.message_id)
-    context.chat_data['messages_to_delete'] = messages_to_delete
+            log.warning("Ingest docs lỗi: %s", e)
 
 
-def main():
-    """Hàm chính để khởi chạy bot."""
-    if not TELEGRAM_TOKEN or "YOUR_FALLBACK_TOKEN_HERE" in TELEGRAM_TOKEN:
-        print("Vui lòng đặt TELEGRAM_TOKEN hợp lệ trong code hoặc tệp .env!")
+def _guard(update: Update) -> bool:
+    chat = update.effective_chat
+    if not chat:
+        return False
+    if not config.is_allowed_chat(chat.id):
+        log.info("Chặn chat_id chưa được phép: %s", chat.id)
+        return False
+    return True
+
+
+async def _send_denied(update: Update) -> None:
+    chat = update.effective_chat
+    if not chat:
+        return
+    await update.message.reply_text(
+        f"❌ Chat ID <code>{chat.id}</code> chưa được cấp quyền.\n"
+        "Liên hệ admin để được thêm vào whitelist.",
+        parse_mode="HTML",
+    )
+
+
+async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _guard(update):
+        await _send_denied(update)
+        return
+    role = role_of(update.effective_chat.id)
+    await update.message.chat.send_action(ChatAction.TYPING)
+    text = (
+        "<b>👩‍🏫 Cố vấn học tập ảo</b>\n\n"
+        f"Bạn đang đăng nhập với vai trò: <b>{role}</b>\n\n"
+        "Tôi có thể giúp:\n"
+        "• Tra cứu điểm, hạnh kiểm, chuyên cần, xếp hạng\n"
+        "• Top học sinh, điểm TB lớp, xu hướng học tập\n"
+        "• Tra cứu nội quy, quy định, lịch học, học phí\n\n"
+        "Gõ <b>/help</b> để xem lệnh • <b>/clear</b> xoá lịch sử"
+    )
+    await update.message.reply_text(text, parse_mode="HTML")
+
+
+async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _guard(update):
+        await _send_denied(update)
+        return
+    text = (
+        "<b>Lệnh:</b>\n"
+        "/start • /help • /clear • /whoami • /stats\n\n"
+        "<b>Ví dụ câu hỏi điểm số:</b>\n"
+        "• Điểm Toán của Lê Nguyễn Minh Trí lớp 7A10\n"
+        "• Top 5 lớp 7A10 học kỳ 2\n"
+        "• Em Trí thế mạnh môn nào?\n"
+        "• So sánh Trí với Nam lớp 7A10\n\n"
+        "<b>Ví dụ câu hỏi tài liệu:</b>\n"
+        "• Quy định nghỉ học không phép thế nào?\n"
+        "• Học phí lớp 7 năm 2024-2025 bao nhiêu?\n"
+        "• Lịch kiểm tra cuối kỳ 2 khi nào?\n"
+        "• Tiêu chí xếp hạnh kiểm Tốt là gì?"
+    )
+    await update.message.reply_text(text, parse_mode="HTML")
+
+
+async def handle_whoami(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    user = update.effective_user
+    role = role_of(chat.id)
+    text = (
+        f"<b>Chat ID:</b> <code>{chat.id}</code>\n"
+        f"<b>User ID:</b> <code>{user.id if user else '?'}</code>\n"
+        f"<b>Role:</b> <code>{role}</code>\n"
+        f"<b>Trạng thái:</b> "
+        + ("✅ được phép" if config.is_allowed_chat(chat.id) else "❌ chưa được phép")
+    )
+    await update.message.reply_text(text, parse_mode="HTML")
+
+
+async def handle_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _guard(update):
+        await _send_denied(update)
+        return
+    n = HISTORY.clear(update.effective_chat.id)
+    await update.message.reply_text(f"🧹 Đã xoá {n} dòng lịch sử.", parse_mode="HTML")
+
+
+async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _guard(update):
+        await _send_denied(update)
+        return
+    if not config.is_admin_chat(update.effective_chat.id):
+        await update.message.reply_text("Chỉ admin xem được stats.")
+        return
+    s = AUDIT.stats()
+    text = (
+        f"<b>📊 Audit stats</b>\n"
+        f"Total queries: <code>{s['total']}</code>\n"
+        f"Success: <code>{s['success']}</code> ({s['success_rate']*100:.1f}%)\n"
+        f"Avg latency: <code>{s['avg_latency_ms']} ms</code>\n"
+        f"By role: <code>{s['by_role']}</code>"
+    )
+    await update.message.reply_text(text, parse_mode="HTML")
+
+
+async def handle_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _guard(update):
+        await _send_denied(update)
         return
 
-    print("Xây dựng ứng dụng...")
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    chat_id = update.effective_chat.id
+    user_message = (update.message.text or "").strip()
+    if not user_message:
+        return
+    role = role_of(chat_id)
 
-    # Đăng ký các handler
+    await update.message.chat.send_action(ChatAction.TYPING)
+    history = HISTORY.load(chat_id, config.HISTORY_TURNS)
+
+    try:
+        loop = asyncio.get_running_loop()
+        advisor = get_advisor()
+        result = await loop.run_in_executor(
+            None,
+            lambda: advisor.answer(
+                user_message, list(history), AdvisorContext(role=role, rewrite=True)
+            ),
+        )
+    except Exception:
+        log.exception("Lỗi xử lý chat %s", chat_id)
+        AUDIT.log_query(chat_id, role, user_message, [], "", 0, False)
+        await update.message.reply_text("❌ Đã có lỗi xử lý câu hỏi.")
+        return
+
+    HISTORY.append(chat_id, "user", user_message)
+    HISTORY.append(chat_id, "model", result.answer)
+    AUDIT.log_query(
+        chat_id, role, user_message, result.tools_called,
+        result.answer, result.elapsed_ms, result.success,
+    )
+
+    safe = html.escape(result.answer)
+    footer_bits = [f"⏱ {result.elapsed_ms/1000:.2f}s"]
+    if result.tools_called:
+        footer_bits.append(f"🔧 {len(result.tools_called)} tool")
+    if result.citations:
+        footer_bits.append(f"📚 {len(result.citations)} nguồn")
+    text = f"{safe}\n\n<i>{' • '.join(footer_bits)}</i>"
+
+    await update.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
+
+
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    log.exception("Unhandled error", exc_info=context.error)
+
+
+def build_app() -> Application:
+    app = ApplicationBuilder().token(config.TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", handle_start))
     app.add_handler(CommandHandler("help", handle_help))
-    app.add_handler(CommandHandler("history", handle_history))
+    app.add_handler(CommandHandler("whoami", handle_whoami))
     app.add_handler(CommandHandler("clear", handle_clear))
-    
+    app.add_handler(CommandHandler("stats", handle_stats))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_chat))
+    app.add_error_handler(on_error)
+    return app
 
-    print("Bot đang chạy...")
-    app.run_polling()
+
+def main() -> None:
+    bootstrap_index()
+    app = build_app()
+    log.info(
+        "Bot khởi động. allow_all=%s allowed=%s admins=%s",
+        config.TELEGRAM_ALLOW_ALL,
+        sorted(config.TELEGRAM_ALLOWED_IDS),
+        sorted(config.TELEGRAM_ADMIN_IDS),
+    )
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-
